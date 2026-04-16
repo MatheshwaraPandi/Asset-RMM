@@ -1,0 +1,4 @@
+wmi
+psutil
+requests
+pyinstaller
