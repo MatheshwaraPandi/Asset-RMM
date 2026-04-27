@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['agent.py'],
+    ['D:\\Asset-RMM\\agent\\agent.py'],
     pathex=[],
     binaries=[],
     datas=[],

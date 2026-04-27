@@ -1,24 +1,52 @@
-﻿import os
+import os
+import secrets
+import smtplib
+import shutil
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from email.message import EmailMessage
+from pathlib import Path
+from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas, security
 from .database import SessionLocal, engine, get_db
 from .migrate import ensure_sqlite_columns
 
-# SQLite auto-migration for local dev
 ensure_sqlite_columns(engine)
-
-# Create tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="RMM Lite API")
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://192.168.0.21:3000")
-allow_origins = [origin.strip() for origin in origins_env.split(",") if origin.strip()]
+app = FastAPI(title="RMM Lite API")
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
+
+def _get_allowed_origins() -> list[str]:
+    configured = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        os.getenv("NEXT_PUBLIC_APP_URL", ""),
+        os.getenv("NEXTAUTH_URL", ""),
+    ]
+    configured.extend(os.getenv("CORS_ORIGINS", "").split(","))
+
+    allow_origins: list[str] = []
+    for origin in configured:
+        cleaned = origin.strip()
+        if cleaned and cleaned not in allow_origins:
+            allow_origins.append(cleaned)
+    return allow_origins
+
+
+allow_origins = _get_allowed_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,29 +58,111 @@ app.add_middleware(
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-def ensure_default_admin(db: Session) -> None:
-    username = os.getenv("ADMIN_USERNAME", "admin")
-    password = os.getenv("ADMIN_PASSWORD", "admin123")
+@dataclass
+class AuthenticatedUser:
+    username: str
+    role: str
+    email: str | None = None
+    name: str | None = None
+    asset_id: int | None = None
 
-    existing = crud.get_admin_by_username(db, username=username)
-    if existing:
-        return
 
-    db_admin = models.Admin(username=username, hashed_password=security.hash_password(password))
-    db.add(db_admin)
-    db.commit()
+def ensure_default_users(db: Session) -> None:
+    defaults = [
+        (
+            os.getenv("ADMIN_USERNAME", "admin"),
+            os.getenv("ADMIN_PASSWORD", "admin123"),
+            "admin",
+        ),
+        (
+            os.getenv("HR_USERNAME", "hradmin"),
+            os.getenv("HR_PASSWORD", "hr123"),
+            "hr",
+        ),
+    ]
+
+    for username, password, role in defaults:
+        existing = crud.get_admin_by_username(db, username=username)
+        if existing:
+            if getattr(existing, "role", None) != role:
+                existing.role = role
+                db.commit()
+            continue
+
+        db_user = models.Admin(
+            username=username,
+            hashed_password=security.hash_password(password),
+            role=role,
+        )
+        db.add(db_user)
+        db.commit()
 
 
 @app.on_event("startup")
 def on_startup():
     db = SessionLocal()
     try:
-        ensure_default_admin(db)
+        ensure_default_users(db)
     finally:
         db.close()
 
 
-def require_admin(
+def _issue_session_payload(*, subject: str, role: str, email: str | None = None, name: str | None = None, asset_id: int | None = None):
+    access_token = security.create_access_token(
+        data={
+            "sub": subject,
+            "role": role,
+            "email": email,
+            "name": name,
+            "asset_id": asset_id,
+        }
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "role": role,
+        "name": name,
+        "email": email,
+    }
+
+
+def _send_otp_email(*, recipient: str, code: str, asset_name: str | None) -> None:
+    host = os.getenv("SMTP_HOST", "").strip()
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME", "").strip()
+    password = os.getenv("SMTP_PASSWORD", "").strip()
+    sender = os.getenv("SMTP_FROM_EMAIL", username).strip()
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() != "false"
+
+    if not host or not sender:
+        raise HTTPException(status_code=503, detail="OTP email is not configured on the server")
+
+    message = EmailMessage()
+    message["Subject"] = f"{os.getenv('OTP_EMAIL_SUBJECT', 'Your RMM Lite login code')}"
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(
+        "\n".join(
+            [
+                f"Hello {asset_name or 'team member'},",
+                "",
+                f"Your one-time login code is: {code}",
+                "",
+                "This code expires in 10 minutes.",
+                "If you did not request this login, you can ignore this email.",
+            ]
+        )
+    )
+
+    with smtplib.SMTP(host, port, timeout=20) as smtp:
+        if use_tls:
+            smtp.starttls()
+        if username:
+            smtp.login(username, password)
+        smtp.send_message(message)
+
+
+def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
@@ -61,18 +171,105 @@ def require_admin(
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    username = payload.get("sub") if isinstance(payload, dict) else None
-    if not username:
+    if not isinstance(payload, dict):
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    admin = crud.get_admin_by_username(db, username=username)
-    if not admin:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    role = payload.get("role")
+    subject = payload.get("sub")
+    if not role or not subject:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-    return admin
+    if role in {"admin", "hr"}:
+        user = crud.get_admin_by_username(db, username=subject)
+        if not user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return AuthenticatedUser(
+            username=user.username,
+            role=user.role,
+            email=None,
+            name=user.username,
+        )
+
+    if role == "employee":
+        email = crud.normalize_email(payload.get("email") or subject)
+        asset = crud.get_asset_by_email(db, email or "")
+        if not asset:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return AuthenticatedUser(
+            username=email or subject,
+            role="employee",
+            email=email,
+            name=getattr(asset, "employee_name", None) or email,
+            asset_id=getattr(asset, "id", None),
+        )
+
+    raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-@app.post("/token")
+def require_roles(*roles: str):
+    allowed_roles = set(roles)
+
+    def dependency(user: AuthenticatedUser = Depends(get_current_user)):
+        if allowed_roles and getattr(user, "role", None) not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return user
+
+    return dependency
+
+
+def _safe_image_ext(filename: str, content_type: Optional[str]) -> str:
+    name = (filename or "").lower()
+    if name.endswith(".png"):
+        return ".png"
+    if name.endswith(".jpg") or name.endswith(".jpeg"):
+        return ".jpg"
+    if content_type == "image/png":
+        return ".png"
+    if content_type == "image/jpeg":
+        return ".jpg"
+    raise HTTPException(status_code=400, detail="Only PNG/JPG images are allowed")
+
+
+def _safe_invoice_ext(filename: str, content_type: Optional[str]) -> str:
+    name = (filename or "").lower()
+    if name.endswith(".pdf"):
+        return ".pdf"
+    if name.endswith(".png"):
+        return ".png"
+    if name.endswith(".jpg") or name.endswith(".jpeg"):
+        return ".jpg"
+    if content_type == "application/pdf":
+        return ".pdf"
+    if content_type == "image/png":
+        return ".png"
+    if content_type == "image/jpeg":
+        return ".jpg"
+    raise HTTPException(status_code=400, detail="Only PDF, PNG, and JPG invoices are allowed")
+
+
+def _save_upload(asset_id: int, token: str, field: str, upload: UploadFile) -> str:
+    ext = _safe_image_ext(upload.filename or "", upload.content_type)
+    filename = f"{asset_id}_{token[:8]}_{field}{ext}"
+    path = UPLOAD_DIR / filename
+
+    with path.open("wb") as file_obj:
+        shutil.copyfileobj(upload.file, file_obj)
+
+    return f"/uploads/{filename}"
+
+
+def _save_invoice(asset_id: int, upload: UploadFile) -> str:
+    ext = _safe_invoice_ext(upload.filename or "", upload.content_type)
+    filename = f"{asset_id}_service_invoice{ext}"
+    path = UPLOAD_DIR / filename
+
+    with path.open("wb") as file_obj:
+        shutil.copyfileobj(upload.file, file_obj)
+
+    return f"/uploads/{filename}"
+
+
+@app.post("/token", response_model=schemas.Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
@@ -81,8 +278,77 @@ async def login(
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
-    access_token = security.create_access_token(data={"sub": user.username})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return _issue_session_payload(
+        subject=user.username,
+        role=user.role,
+        name=user.username,
+    )
+
+
+@app.get("/me", response_model=schemas.SessionUserOut)
+def get_me(user: AuthenticatedUser = Depends(get_current_user)):
+    return {
+        "username": user.username,
+        "role": user.role,
+        "email": user.email,
+        "name": user.name,
+    }
+
+
+@app.post("/auth/request-otp", response_model=schemas.OTPRequestOut)
+def request_otp(
+    payload: schemas.OTPRequest,
+    db: Session = Depends(get_db),
+):
+    email = crud.normalize_email(payload.email)
+    asset = crud.get_asset_by_email(db, email or "")
+    if not asset:
+        raise HTTPException(status_code=404, detail="No employee asset is assigned to that email")
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    expires_in_seconds = int(os.getenv("OTP_EXPIRE_SECONDS", "600"))
+    expires_at = datetime.utcnow() + timedelta(seconds=expires_in_seconds)
+
+    crud.delete_active_otps_for_email(db, email or "")
+    crud.create_login_otp(
+        db,
+        email=email or "",
+        hashed_code=security.hash_password(code),
+        asset_id=asset.id,
+        expires_at=expires_at,
+    )
+    _send_otp_email(recipient=email or "", code=code, asset_name=asset.employee_name)
+
+    return {
+        "message": "OTP sent to your email address",
+        "expires_in_seconds": expires_in_seconds,
+    }
+
+
+@app.post("/auth/verify-otp", response_model=schemas.Token)
+def verify_otp(
+    payload: schemas.OTPVerify,
+    db: Session = Depends(get_db),
+):
+    email = crud.normalize_email(payload.email)
+    asset = crud.get_asset_by_email(db, email or "")
+    if not asset:
+        raise HTTPException(status_code=404, detail="No employee asset is assigned to that email")
+
+    otp_entry = crud.get_latest_valid_login_otp(db, email=email or "")
+    if not otp_entry or not security.verify_password(payload.otp.strip(), otp_entry.hashed_code):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    otp_entry.consumed_at = datetime.utcnow()
+    db.commit()
+
+    return _issue_session_payload(
+        subject=email or "",
+        role="employee",
+        email=email,
+        name=asset.employee_name or email,
+        asset_id=asset.id,
+    )
 
 
 @app.post("/register-asset", status_code=201)
@@ -91,29 +357,142 @@ def register_asset(asset: schemas.AssetCreate, db: Session = Depends(get_db)):
     return {"message": "System info updated successfully"}
 
 
-@app.get("/assets")
-def get_assets(db: Session = Depends(get_db)):
+@app.get("/assets", response_model=list[schemas.AssetOut])
+def get_assets(
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_roles("admin", "hr", "employee")),
+):
+    if user.role == "employee":
+        return crud.get_assets_for_email(db, user.email or "")
     return crud.get_assets(db)
 
 
-@app.get("/public/assets/{asset_id}")
+@app.post("/assets", response_model=schemas.AssetOut, status_code=201)
+def create_asset(
+    asset: schemas.AssetManualCreate,
+    db: Session = Depends(get_db),
+    _: models.Admin = Depends(require_roles("admin", "hr")),
+):
+    return crud.create_manual_asset(db, asset)
+
+
+@app.get("/public/assets/{asset_id}", response_model=schemas.AssetOut)
 def get_public_asset(asset_id: int, db: Session = Depends(get_db)):
-    asset = db.query(models.Asset).filter(models.Asset.id == asset_id).first()
+    asset = crud.get_asset_by_id(db, asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     return asset
 
 
-@app.put("/assets/{asset_id}")
+@app.delete("/assets/{asset_id}", status_code=204)
+def delete_asset(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _: models.Admin = Depends(require_roles("admin", "hr")),
+):
+    deleted = crud.delete_asset(db, asset_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return None
+
+
+@app.put("/assets/{asset_id}", response_model=schemas.AssetOut)
 def update_asset(
     asset_id: int,
     update: schemas.AssetAssignmentUpdate,
     db: Session = Depends(get_db),
-    _: models.Admin = Depends(require_admin),
+    _: models.Admin = Depends(require_roles("admin", "hr")),
 ):
     asset = crud.update_asset_assignment(db, asset_id, update)
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
+    return asset
+
+
+@app.put("/assets/{asset_id}/service", response_model=schemas.AssetOut)
+def update_service(
+    asset_id: int,
+    update: schemas.AssetServiceUpdate,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.update_asset_service(db, asset_id, update, updated_by=user.username)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return asset
+
+
+@app.post("/assets/{asset_id}/service-invoice", response_model=schemas.AssetOut)
+def upload_service_invoice(
+    asset_id: int,
+    invoice: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: models.Admin = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    asset.service_invoice_path = _save_invoice(asset_id, invoice)
+    asset.service_last_updated_by = user.username
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+@app.post("/assets/{asset_id}/upload-token", response_model=schemas.UploadTokenOut)
+def create_upload_token(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _: models.Admin = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if not asset.upload_token:
+        asset.upload_token = secrets.token_urlsafe(24)
+        db.commit()
+        db.refresh(asset)
+
+    return {"upload_token": asset.upload_token}
+
+
+@app.get("/public/upload/{token}", response_model=schemas.PublicUploadInfoOut)
+def get_public_upload_info(token: str, db: Session = Depends(get_db)):
+    asset = crud.get_asset_by_upload_token(db, token=token)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Upload link not found")
+    return asset
+
+
+@app.post("/public/upload/{token}", response_model=schemas.AssetOut)
+def upload_images(
+    token: str,
+    laptop_front: UploadFile | None = File(default=None),
+    laptop_rear: UploadFile | None = File(default=None),
+    mouse: UploadFile | None = File(default=None),
+    charger: UploadFile | None = File(default=None),
+    db: Session = Depends(get_db),
+):
+    asset = crud.get_asset_by_upload_token(db, token=token)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Upload link not found")
+
+    if not any([laptop_front, laptop_rear, mouse, charger]):
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    if laptop_front:
+        asset.laptop_front_image = _save_upload(asset.id, token, "laptop_front", laptop_front)
+    if laptop_rear:
+        asset.laptop_rear_image = _save_upload(asset.id, token, "laptop_rear", laptop_rear)
+    if mouse:
+        asset.mouse_image = _save_upload(asset.id, token, "mouse", mouse)
+    if charger:
+        asset.charger_image = _save_upload(asset.id, token, "charger", charger)
+
+    db.commit()
+    db.refresh(asset)
     return asset
 
 
