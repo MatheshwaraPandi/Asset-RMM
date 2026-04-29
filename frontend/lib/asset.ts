@@ -4,9 +4,12 @@ export type Asset = {
   employee_name?: string | null;
   employee_id?: string | null;
   email?: string | null;
+  employee_username?: string | null;
   laptop_no?: string | null;
   charger_no?: string | null;
   mouse_no?: string | null;
+  headset_no?: string | null;
+  other_devices?: string | null;
   department?: string | null;
   location?: string | null;
 
@@ -42,7 +45,42 @@ export type Asset = {
   service_invoice_number?: string | null;
   service_invoice_amount?: string | null;
   service_last_updated_by?: string | null;
+  asset_status?: string | null;
+  asset_status_date?: string | null;
+  asset_status_last_updated_at?: string | null;
+  asset_status_last_updated_by?: string | null;
+  assignment_status?: string | null;
+  assignment_status_date?: string | null;
+  assignment_status_last_updated_at?: string | null;
+  assignment_status_last_updated_by?: string | null;
   last_updated?: string | null;
+};
+
+export type AssetStatusHistory = {
+  id: number;
+  asset_id: number;
+  status: string;
+  effective_date?: string | null;
+  updated_by?: string | null;
+  created_at: string;
+};
+
+export type AssetAssignmentHistory = {
+  id: number;
+  asset_id: number;
+  assignment_status: string;
+  effective_date?: string | null;
+  employee_name?: string | null;
+  employee_id?: string | null;
+  email?: string | null;
+  updated_by?: string | null;
+  created_at: string;
+};
+
+export type AssetTracking = {
+  asset: Asset;
+  status_history: AssetStatusHistory[];
+  assignment_history: AssetAssignmentHistory[];
 };
 
 export type AssignmentForm = {
@@ -52,6 +90,8 @@ export type AssignmentForm = {
   laptop_no: string;
   charger_no: string;
   mouse_no: string;
+  headset_no: string;
+  other_devices: string;
   department: string;
   location: string;
 };
@@ -73,6 +113,8 @@ export const emptyForm: AssignmentForm = {
   laptop_no: "",
   charger_no: "",
   mouse_no: "",
+  headset_no: "",
+  other_devices: "",
   department: "",
   location: "",
 };
@@ -95,6 +137,8 @@ export function getAssignmentForm(asset: Asset): AssignmentForm {
     laptop_no: asset.laptop_no ?? "",
     charger_no: asset.charger_no ?? "",
     mouse_no: asset.mouse_no ?? "",
+    headset_no: asset.headset_no ?? "",
+    other_devices: asset.other_devices ?? "",
     department: asset.department ?? "",
     location: asset.location ?? "",
   };

@@ -22,9 +22,13 @@ class Asset(Base):
     employee_name = Column(String, nullable=True)
     employee_id = Column(String, unique=True, index=True, nullable=True)
     email = Column(String, nullable=True)
+    employee_username = Column(String, nullable=True)
+    employee_password_hash = Column(String, nullable=True)
     laptop_no = Column(String, nullable=True)
     charger_no = Column(String, nullable=True)
     mouse_no = Column(String, nullable=True)
+    headset_no = Column(String, nullable=True)
+    other_devices = Column(String, nullable=True)
     department = Column(String, nullable=True)
     location = Column(String, nullable=True)
 
@@ -62,6 +66,14 @@ class Asset(Base):
     service_invoice_number = Column(String, nullable=True)
     service_invoice_amount = Column(String, nullable=True)
     service_last_updated_by = Column(String, nullable=True)
+    asset_status = Column(String, nullable=True, default="In Use")
+    asset_status_date = Column(String, nullable=True)
+    asset_status_last_updated_at = Column(DateTime, nullable=True)
+    asset_status_last_updated_by = Column(String, nullable=True)
+    assignment_status = Column(String, nullable=True, default="Assigned")
+    assignment_status_date = Column(String, nullable=True)
+    assignment_status_last_updated_at = Column(DateTime, nullable=True)
+    assignment_status_last_updated_by = Column(String, nullable=True)
 
     last_updated = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -76,4 +88,41 @@ class LoginOTP(Base):
     purpose = Column(String, nullable=False, default="employee_login")
     expires_at = Column(DateTime, nullable=False)
     consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, index=True, nullable=False)
+    token = Column(String, unique=True, index=True, nullable=False)
+    asset_id = Column(Integer, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+
+class AssetStatusHistory(Base):
+    __tablename__ = "asset_status_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, index=True, nullable=False)
+    status = Column(String, nullable=False)
+    effective_date = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+
+class AssetAssignmentHistory(Base):
+    __tablename__ = "asset_assignment_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, index=True, nullable=False)
+    assignment_status = Column(String, nullable=False)
+    effective_date = Column(String, nullable=True)
+    employee_name = Column(String, nullable=True)
+    employee_id = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)

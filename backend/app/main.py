@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -126,7 +127,7 @@ def _issue_session_payload(*, subject: str, role: str, email: str | None = None,
     }
 
 
-def _send_otp_email(*, recipient: str, code: str, asset_name: str | None) -> None:
+def _send_email(*, recipient: str, subject: str, lines: list[str]) -> None:
     host = os.getenv("SMTP_HOST", "").strip()
     port = int(os.getenv("SMTP_PORT", "587"))
     username = os.getenv("SMTP_USERNAME", "").strip()
@@ -135,31 +136,71 @@ def _send_otp_email(*, recipient: str, code: str, asset_name: str | None) -> Non
     use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() != "false"
 
     if not host or not sender:
-        raise HTTPException(status_code=503, detail="OTP email is not configured on the server")
+        raise HTTPException(status_code=503, detail="Email is not configured on the server")
 
     message = EmailMessage()
-    message["Subject"] = f"{os.getenv('OTP_EMAIL_SUBJECT', 'Your RMM Lite login code')}"
+    message["Subject"] = subject
     message["From"] = sender
     message["To"] = recipient
-    message.set_content(
-        "\n".join(
-            [
-                f"Hello {asset_name or 'team member'},",
-                "",
-                f"Your one-time login code is: {code}",
-                "",
-                "This code expires in 10 minutes.",
-                "If you did not request this login, you can ignore this email.",
-            ]
+    message.set_content("\n".join(lines))
+
+    try:
+        with smtplib.SMTP(host, port, timeout=20) as smtp:
+            if use_tls:
+                smtp.starttls()
+            if username:
+                smtp.login(username, password)
+            smtp.send_message(message)
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(
+            status_code=503,
+            detail="Email delivery failed: SMTP authentication was rejected. Check SMTP username/password or app password settings.",
         )
+    except smtplib.SMTPException:
+        raise HTTPException(
+            status_code=503,
+            detail="Email delivery failed due to an SMTP error. Check the mail server settings and try again.",
+        )
+
+
+def _send_otp_email(*, recipient: str, code: str, asset_name: str | None) -> None:
+    _send_email(
+        recipient=recipient,
+        subject=f"{os.getenv('OTP_EMAIL_SUBJECT', 'Your RMM Lite login code')}",
+        lines=[
+            f"Hello {asset_name or 'team member'},",
+            "",
+            f"Your one-time login code is: {code}",
+            "",
+            "This code expires in 10 minutes.",
+            "If you did not request this login, you can ignore this email.",
+        ],
     )
 
-    with smtplib.SMTP(host, port, timeout=20) as smtp:
-        if use_tls:
-            smtp.starttls()
-        if username:
-            smtp.login(username, password)
-        smtp.send_message(message)
+
+def _get_app_base_url() -> str:
+    return (
+        os.getenv("NEXT_PUBLIC_APP_URL", "").strip()
+        or os.getenv("NEXTAUTH_URL", "").strip()
+        or "http://localhost:3000"
+    ).rstrip("/")
+
+
+def _send_password_reset_email(*, recipient: str, asset_name: str | None, token: str) -> None:
+    reset_url = f"{_get_app_base_url()}/reset-password?token={quote(token)}"
+    _send_email(
+        recipient=recipient,
+        subject=os.getenv("RESET_PASSWORD_EMAIL_SUBJECT", "Reset your RMM Lite password"),
+        lines=[
+            f"Hello {asset_name or 'team member'},",
+            "",
+            "We received a request to reset your password.",
+            f"Reset your password here: {reset_url}",
+            "",
+            "This link expires in 30 minutes.",
+            "If you did not request this, you can ignore this email.",
+        ],
+    )
 
 
 def get_current_user(
@@ -274,6 +315,7 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
+    ensure_default_users(db)
     user = crud.get_admin_by_username(db, username=form_data.username)
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Invalid credentials")
@@ -351,6 +393,119 @@ def verify_otp(
     )
 
 
+@app.post("/auth/employee-login", response_model=schemas.Token)
+def employee_login(
+    payload: schemas.EmployeeLogin,
+    db: Session = Depends(get_db),
+):
+    asset = crud.get_asset_by_login_identifier(db, payload.login)
+    if not asset:
+        raise HTTPException(status_code=404, detail="No employee asset matches that username or organization email")
+
+    stored_password_hash = getattr(asset, "employee_password_hash", None)
+    if not stored_password_hash or not security.verify_password(payload.password, stored_password_hash):
+        raise HTTPException(status_code=400, detail="Invalid username/email or password")
+
+    email = crud.normalize_email(getattr(asset, "email", None))
+    login_subject = crud.normalize_username(getattr(asset, "employee_username", None)) or email or payload.login.strip()
+
+    return _issue_session_payload(
+        subject=login_subject,
+        role="employee",
+        email=email,
+        name=asset.employee_name or email,
+        asset_id=asset.id,
+    )
+
+
+@app.post("/auth/change-password", response_model=schemas.MessageOut)
+def change_employee_password(
+    payload: schemas.EmployeePasswordChange,
+    db: Session = Depends(get_db),
+):
+    asset = crud.get_asset_by_login_identifier(db, payload.login)
+    if not asset:
+        raise HTTPException(status_code=404, detail="No employee asset matches that username or organization email")
+
+    stored_password_hash = getattr(asset, "employee_password_hash", None)
+    if not stored_password_hash or not security.verify_password(payload.old_password, stored_password_hash):
+        raise HTTPException(status_code=400, detail="Old password is incorrect")
+
+    new_password = payload.new_password.strip()
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters long")
+
+    crud.update_asset_credentials(
+        db,
+        asset_id=asset.id,
+        password_hash=security.hash_password(new_password),
+    )
+    return {"message": "Password updated successfully. You can now sign in with the new password."}
+
+
+@app.post("/auth/forgot-password", response_model=schemas.MessageOut)
+def forgot_password(
+    payload: schemas.ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    email = crud.normalize_email(payload.email)
+    asset = crud.get_asset_by_email(db, email or "")
+    if not asset:
+        raise HTTPException(status_code=404, detail="No employee asset is assigned to that organization email")
+
+    expires_in_seconds = int(os.getenv("PASSWORD_RESET_EXPIRE_SECONDS", "1800"))
+    expires_at = datetime.utcnow() + timedelta(seconds=expires_in_seconds)
+    reset_token = secrets.token_urlsafe(32)
+
+    crud.delete_active_password_reset_tokens_for_email(db, email or "")
+    crud.create_password_reset_token(
+        db,
+        email=email or "",
+        token=reset_token,
+        asset_id=asset.id,
+        expires_at=expires_at,
+    )
+    try:
+        _send_password_reset_email(
+            recipient=email or "",
+            asset_name=asset.employee_name,
+            token=reset_token,
+        )
+    except HTTPException:
+        crud.delete_password_reset_token_by_value(db, token=reset_token)
+        raise
+
+    return {"message": "Password reset link sent to your organization email"}
+
+
+@app.post("/auth/reset-password", response_model=schemas.MessageOut)
+def reset_password(
+    payload: schemas.ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    new_password = payload.password.strip()
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+
+    reset_entry = crud.get_valid_password_reset_token(db, token=payload.token.strip())
+    if not reset_entry:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+
+    asset = crud.get_asset_by_id(db, reset_entry.asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    crud.set_employee_password(
+        db,
+        asset_id=asset.id,
+        password_hash=security.hash_password(new_password),
+    )
+    reset_entry.consumed_at = datetime.utcnow()
+    db.commit()
+
+    return {"message": "Password updated successfully. You can now sign in."}
+
+
 @app.post("/register-asset", status_code=201)
 def register_asset(asset: schemas.AssetCreate, db: Session = Depends(get_db)):
     crud.create_or_update_asset(db, asset)
@@ -401,12 +556,97 @@ def update_asset(
     asset_id: int,
     update: schemas.AssetAssignmentUpdate,
     db: Session = Depends(get_db),
-    _: models.Admin = Depends(require_roles("admin", "hr")),
+    user: AuthenticatedUser = Depends(require_roles("admin", "hr")),
 ):
-    asset = crud.update_asset_assignment(db, asset_id, update)
+    asset = crud.update_asset_assignment(db, asset_id, update, updated_by=user.username)
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     return asset
+
+
+@app.get("/assets/{asset_id}/credentials", response_model=schemas.AssetCredentialsOut)
+def get_asset_credentials(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return {
+        "id": asset.id,
+        "employee_username": getattr(asset, "employee_username", None),
+        "email": getattr(asset, "email", None),
+        "password_configured": bool(getattr(asset, "employee_password_hash", None)),
+    }
+
+
+@app.put("/assets/{asset_id}/credentials", response_model=schemas.AssetCredentialsOut)
+def update_asset_credentials(
+    asset_id: int,
+    payload: schemas.AssetCredentialsUpdate,
+    db: Session = Depends(get_db),
+    _: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
+    password = (data.get("password") or "").strip()
+    username = data.get("employee_username")
+
+    if password and len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+
+    asset = crud.update_asset_credentials(
+        db,
+        asset_id=asset_id,
+        employee_username=username,
+        password_hash=security.hash_password(password) if password else None,
+    )
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return {
+        "id": asset.id,
+        "employee_username": getattr(asset, "employee_username", None),
+        "email": getattr(asset, "email", None),
+        "password_configured": bool(getattr(asset, "employee_password_hash", None)),
+    }
+
+
+@app.get("/assets/{asset_id}/tracking", response_model=schemas.AssetTrackingOut)
+def get_asset_tracking(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return {
+        "asset": asset,
+        "status_history": crud.get_asset_status_history(db, asset_id),
+        "assignment_history": crud.get_asset_assignment_history(db, asset_id),
+    }
+
+
+@app.put("/assets/{asset_id}/tracking", response_model=schemas.AssetTrackingOut)
+def update_asset_tracking(
+    asset_id: int,
+    update: schemas.AssetTrackingUpdate,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.update_asset_tracking(
+        db,
+        asset_id=asset_id,
+        update=update,
+        updated_by=user.username,
+    )
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return {
+        "asset": asset,
+        "status_history": crud.get_asset_status_history(db, asset_id),
+        "assignment_history": crud.get_asset_assignment_history(db, asset_id),
+    }
 
 
 @app.put("/assets/{asset_id}/service", response_model=schemas.AssetOut)
@@ -499,4 +739,4 @@ def upload_images(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)

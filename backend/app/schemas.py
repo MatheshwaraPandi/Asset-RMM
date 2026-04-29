@@ -32,6 +32,8 @@ class AssetAssignmentUpdate(BaseModel):
     laptop_no: Optional[str] = None
     charger_no: Optional[str] = None
     mouse_no: Optional[str] = None
+    headset_no: Optional[str] = None
+    other_devices: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = None
 
@@ -43,6 +45,8 @@ class AssetManualCreate(BaseModel):
     laptop_no: Optional[str] = None
     charger_no: Optional[str] = None
     mouse_no: Optional[str] = None
+    headset_no: Optional[str] = None
+    other_devices: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = None
     hostname: Optional[str] = None
@@ -67,9 +71,12 @@ class AssetOut(BaseModel):
     employee_name: Optional[str] = None
     employee_id: Optional[str] = None
     email: Optional[str] = None
+    employee_username: Optional[str] = None
     laptop_no: Optional[str] = None
     charger_no: Optional[str] = None
     mouse_no: Optional[str] = None
+    headset_no: Optional[str] = None
+    other_devices: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = None
 
@@ -105,11 +112,31 @@ class AssetOut(BaseModel):
     service_invoice_number: Optional[str] = None
     service_invoice_amount: Optional[str] = None
     service_last_updated_by: Optional[str] = None
+    asset_status: Optional[str] = None
+    asset_status_date: Optional[str] = None
+    asset_status_last_updated_at: Optional[datetime] = None
+    asset_status_last_updated_by: Optional[str] = None
+    assignment_status: Optional[str] = None
+    assignment_status_date: Optional[str] = None
+    assignment_status_last_updated_at: Optional[datetime] = None
+    assignment_status_last_updated_by: Optional[str] = None
 
     last_updated: datetime
 
     class Config:
         from_attributes = True
+
+
+class AssetCredentialsUpdate(BaseModel):
+    employee_username: Optional[str] = None
+    password: Optional[str] = None
+
+
+class AssetCredentialsOut(BaseModel):
+    id: int
+    employee_username: Optional[str] = None
+    email: Optional[str] = None
+    password_configured: bool
 
 
 class UploadTokenOut(BaseModel):
@@ -155,3 +182,67 @@ class OTPRequestOut(BaseModel):
 class OTPVerify(BaseModel):
     email: str
     otp: str
+
+
+class EmployeeLogin(BaseModel):
+    login: str
+    password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class MessageOut(BaseModel):
+    message: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+class EmployeePasswordChange(BaseModel):
+    login: str
+    old_password: str
+    new_password: str
+
+
+class AssetTrackingUpdate(BaseModel):
+    asset_status: str
+    asset_status_date: Optional[str] = None
+    assignment_status: str
+    assignment_status_date: Optional[str] = None
+
+
+class AssetStatusHistoryOut(BaseModel):
+    id: int
+    asset_id: int
+    status: str
+    effective_date: Optional[str] = None
+    updated_by: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AssetAssignmentHistoryOut(BaseModel):
+    id: int
+    asset_id: int
+    assignment_status: str
+    effective_date: Optional[str] = None
+    employee_name: Optional[str] = None
+    employee_id: Optional[str] = None
+    email: Optional[str] = None
+    updated_by: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AssetTrackingOut(BaseModel):
+    asset: AssetOut
+    status_history: list[AssetStatusHistoryOut]
+    assignment_history: list[AssetAssignmentHistoryOut]

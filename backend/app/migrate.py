@@ -9,6 +9,9 @@ def ensure_sqlite_columns(engine) -> None:
         conn.execute(text("CREATE TABLE IF NOT EXISTS assets (id INTEGER PRIMARY KEY)"))
         conn.execute(text("CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY)"))
         conn.execute(text("CREATE TABLE IF NOT EXISTS login_otps (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE IF NOT EXISTS password_reset_tokens (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE IF NOT EXISTS asset_status_history (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE IF NOT EXISTS asset_assignment_history (id INTEGER PRIMARY KEY)"))
 
         cols = conn.execute(text("PRAGMA table_info(assets)"))
         existing = {row[1] for row in cols.fetchall()}
@@ -16,6 +19,12 @@ def ensure_sqlite_columns(engine) -> None:
         existing_admin = {row[1] for row in admin_cols.fetchall()}
         otp_cols = conn.execute(text("PRAGMA table_info(login_otps)"))
         existing_otp = {row[1] for row in otp_cols.fetchall()}
+        reset_cols = conn.execute(text("PRAGMA table_info(password_reset_tokens)"))
+        existing_reset = {row[1] for row in reset_cols.fetchall()}
+        status_history_cols = conn.execute(text("PRAGMA table_info(asset_status_history)"))
+        existing_status_history = {row[1] for row in status_history_cols.fetchall()}
+        assignment_history_cols = conn.execute(text("PRAGMA table_info(asset_assignment_history)"))
+        existing_assignment_history = {row[1] for row in assignment_history_cols.fetchall()}
 
         desired_admin = {
             "username": "TEXT",
@@ -31,14 +40,43 @@ def ensure_sqlite_columns(engine) -> None:
             "consumed_at": "TEXT",
             "created_at": "TEXT",
         }
+        desired_reset = {
+            "email": "TEXT",
+            "token": "TEXT",
+            "asset_id": "INTEGER",
+            "expires_at": "TEXT",
+            "consumed_at": "TEXT",
+            "created_at": "TEXT",
+        }
+        desired_status_history = {
+            "asset_id": "INTEGER",
+            "status": "TEXT",
+            "effective_date": "TEXT",
+            "updated_by": "TEXT",
+            "created_at": "TEXT",
+        }
+        desired_assignment_history = {
+            "asset_id": "INTEGER",
+            "assignment_status": "TEXT",
+            "effective_date": "TEXT",
+            "employee_name": "TEXT",
+            "employee_id": "TEXT",
+            "email": "TEXT",
+            "updated_by": "TEXT",
+            "created_at": "TEXT",
+        }
 
         desired = {
             "employee_name": "TEXT",
             "employee_id": "TEXT",
             "email": "TEXT",
+            "employee_username": "TEXT",
+            "employee_password_hash": "TEXT",
             "laptop_no": "TEXT",
             "charger_no": "TEXT",
             "mouse_no": "TEXT",
+            "headset_no": "TEXT",
+            "other_devices": "TEXT",
             "department": "TEXT",
             "location": "TEXT",
             "upload_token": "TEXT",
@@ -70,6 +108,14 @@ def ensure_sqlite_columns(engine) -> None:
             "service_invoice_number": "TEXT",
             "service_invoice_amount": "TEXT",
             "service_last_updated_by": "TEXT",
+            "asset_status": "TEXT",
+            "asset_status_date": "TEXT",
+            "asset_status_last_updated_at": "TEXT",
+            "asset_status_last_updated_by": "TEXT",
+            "assignment_status": "TEXT",
+            "assignment_status_date": "TEXT",
+            "assignment_status_last_updated_at": "TEXT",
+            "assignment_status_last_updated_by": "TEXT",
             "last_updated": "TEXT",
         }
 
@@ -80,6 +126,18 @@ def ensure_sqlite_columns(engine) -> None:
         for name, sql_type in desired_otp.items():
             if name not in existing_otp:
                 conn.execute(text(f"ALTER TABLE login_otps ADD COLUMN {name} {sql_type}"))
+
+        for name, sql_type in desired_reset.items():
+            if name not in existing_reset:
+                conn.execute(text(f"ALTER TABLE password_reset_tokens ADD COLUMN {name} {sql_type}"))
+
+        for name, sql_type in desired_status_history.items():
+            if name not in existing_status_history:
+                conn.execute(text(f"ALTER TABLE asset_status_history ADD COLUMN {name} {sql_type}"))
+
+        for name, sql_type in desired_assignment_history.items():
+            if name not in existing_assignment_history:
+                conn.execute(text(f"ALTER TABLE asset_assignment_history ADD COLUMN {name} {sql_type}"))
 
         for name, sql_type in desired.items():
             if name not in existing:

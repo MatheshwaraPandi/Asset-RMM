@@ -5,7 +5,7 @@ import jsPDF from "jspdf";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Building2, Cpu, Download, FileText, Plus, Printer, RefreshCw, Save, ShieldCheck, Trash2, Upload, UserCog, Wrench } from "lucide-react";
+import { Building2, Cpu, Download, Eye, EyeOff, FileText, KeyRound, Plus, Printer, RefreshCw, Save, ShieldCheck, Trash2, Upload, UserCog, Wrench } from "lucide-react";
 
 import { getBackendBaseUrl } from "@/lib/backend-url";
 import {
@@ -26,6 +26,18 @@ type AdminClientProps = {
   accessToken: string;
   currentRole: string;
   currentUsername: string;
+};
+
+type CredentialForm = {
+  employee_username: string;
+  password: string;
+};
+
+type CredentialInfo = {
+  id: number;
+  employee_username?: string | null;
+  email?: string | null;
+  password_configured: boolean;
 };
 
 const serviceStatuses = [
@@ -96,7 +108,12 @@ export default function AdminClient({
   const [selected, setSelected] = useState<Asset | null>(null);
   const [form, setForm] = useState<AssignmentForm>(emptyForm);
   const [serviceForm, setServiceForm] = useState<ServiceForm>(emptyServiceForm);
+  const [credentialsForm, setCredentialsForm] = useState<CredentialForm>({ employee_username: "", password: "" });
+  const [passwordConfigured, setPasswordConfigured] = useState(false);
+  const [showEmployeePassword, setShowEmployeePassword] = useState(false);
+  const [assignmentTab, setAssignmentTab] = useState<"details" | "credentials">("details");
   const [savingAssignment, setSavingAssignment] = useState(false);
+  const [savingCredentials, setSavingCredentials] = useState(false);
   const [savingService, setSavingService] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
@@ -113,6 +130,26 @@ export default function AdminClient({
   const canEditAssignment = currentRole === "admin" || currentRole === "hr";
   const canManageService = currentRole === "admin" || currentRole === "hr";
 
+  const fetchCredentials = async (assetId: number, fallbackAsset?: Asset | null) => {
+    try {
+      const res = await axios.get<CredentialInfo>(`${getBackendBaseUrl()}/assets/${assetId}/credentials`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      setCredentialsForm({
+        employee_username:
+          res.data.employee_username ?? fallbackAsset?.employee_username ?? fallbackAsset?.email ?? "",
+        password: "",
+      });
+      setPasswordConfigured(res.data.password_configured);
+    } catch {
+      setCredentialsForm({
+        employee_username: fallbackAsset?.employee_username ?? fallbackAsset?.email ?? "",
+        password: "",
+      });
+      setPasswordConfigured(false);
+    }
+  };
+
   const fetchAssets = async () => {
     setLoading(true);
     setError("");
@@ -127,6 +164,7 @@ export default function AdminClient({
           setSelected(refreshed);
           setForm(getAssignmentForm(refreshed));
           setServiceForm(getServiceForm(refreshed));
+          fetchCredentials(refreshed.id, refreshed);
         }
       }
     } catch {
@@ -151,6 +189,8 @@ export default function AdminClient({
         asset.serial_number,
         asset.hostname,
         asset.model,
+        asset.headset_no,
+        asset.other_devices,
         asset.department,
         asset.location,
         asset.service_status,
@@ -182,6 +222,13 @@ export default function AdminClient({
     setSelected(asset);
     setForm(getAssignmentForm(asset));
     setServiceForm(getServiceForm(asset));
+    setCredentialsForm({
+      employee_username: asset.employee_username ?? asset.email ?? "",
+      password: "",
+    });
+    setPasswordConfigured(false);
+    setShowEmployeePassword(false);
+    setAssignmentTab("details");
     setLaptopFrontFile(null);
     setLaptopRearFile(null);
     setMouseFile(null);
@@ -189,6 +236,7 @@ export default function AdminClient({
     setInvoiceFile(null);
     setError("");
     setSuccess("");
+    fetchCredentials(asset.id, asset);
   };
 
   const createAsset = async () => {
@@ -206,6 +254,8 @@ export default function AdminClient({
           laptop_no: "",
           charger_no: "",
           mouse_no: "",
+          headset_no: "",
+          other_devices: "",
           department: "",
           location: "",
         },
@@ -239,6 +289,8 @@ export default function AdminClient({
       setAssets((current) => current.filter((asset) => asset.id !== selected.id));
       setSelected(null);
       setForm(emptyForm);
+      setCredentialsForm({ employee_username: "", password: "" });
+      setPasswordConfigured(false);
       setServiceForm(emptyServiceForm);
       setSuccess("Asset deleted successfully.");
     } catch {
@@ -269,11 +321,63 @@ export default function AdminClient({
       setAssets((current) => current.map((asset) => (asset.id === updated.id ? updated : asset)));
       setSelected(updated);
       setForm(getAssignmentForm(updated));
+      setCredentialsForm((current) => ({
+        ...current,
+        employee_username: current.employee_username || updated.employee_username || updated.email || "",
+      }));
       setSuccess("Employee asset details updated.");
     } catch {
       setError("Failed to save asset assignment details.");
     } finally {
       setSavingAssignment(false);
+    }
+  };
+
+  const saveCredentials = async () => {
+    if (!selected || !canEditAssignment) return;
+    setSavingCredentials(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await axios.put<CredentialInfo>(
+        `${getBackendBaseUrl()}/assets/${selected.id}/credentials`,
+        credentialsForm,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      setAssets((current) =>
+        current.map((asset) =>
+          asset.id === selected.id
+            ? {
+                ...asset,
+                employee_username: res.data.employee_username ?? asset.employee_username,
+              }
+            : asset
+        )
+      );
+      setSelected((current) =>
+        current
+          ? {
+              ...current,
+              employee_username: res.data.employee_username ?? current.employee_username,
+            }
+          : current
+      );
+      setCredentialsForm((current) => ({
+        ...current,
+        employee_username: res.data.employee_username ?? "",
+        password: "",
+      }));
+      setPasswordConfigured(res.data.password_configured);
+      setShowEmployeePassword(false);
+      setSuccess("Employee credentials updated.");
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(typeof err.response?.data?.detail === "string" ? err.response.data.detail : "Failed to save employee credentials.");
+      } else {
+        setError("Failed to save employee credentials.");
+      }
+    } finally {
+      setSavingCredentials(false);
     }
   };
 
@@ -791,9 +895,12 @@ export default function AdminClient({
                     <div className="mt-4 grid gap-3 text-sm text-slate-200 md:grid-cols-2">
                       <div>Employee: {formatValue(selected.employee_name)}</div>
                       <div>Employee ID: {formatValue(selected.employee_id)}</div>
+                      <div>Employee Username: {formatValue(selected.employee_username ?? selected.email)}</div>
                       <div>Department: {formatValue(selected.department)}</div>
                       <div>Location: {formatValue(selected.location)}</div>
                       <div>Laptop No: {formatValue(selected.laptop_no)}</div>
+                      <div>Headset No: {formatValue(selected.headset_no)}</div>
+                      <div>Other Devices: {formatValue(selected.other_devices)}</div>
                       <div>Serial: {formatValue(selected.serial_number)}</div>
                       <div>Hostname: {formatValue(selected.hostname)}</div>
                       <div>OS: {formatValue(selected.os_name)}</div>
@@ -809,24 +916,114 @@ export default function AdminClient({
                       <UserCog size={16} className="text-sky-300" />
                       <h3 className="text-lg font-black">Employee Assignment</h3>
                     </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <Field label="Employee Name" value={form.employee_name} onChange={(value) => setForm({ ...form, employee_name: value })} disabled={!canEditAssignment} />
-                      <Field label="Employee ID" value={form.employee_id} onChange={(value) => setForm({ ...form, employee_id: value })} disabled={!canEditAssignment} />
-                      <Field label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} disabled={!canEditAssignment} />
-                      <Field label="Department" value={form.department} onChange={(value) => setForm({ ...form, department: value })} disabled={!canEditAssignment} />
-                      <Field label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} disabled={!canEditAssignment} />
-                      <Field label="Laptop No" value={form.laptop_no} onChange={(value) => setForm({ ...form, laptop_no: value })} disabled={!canEditAssignment} />
-                      <Field label="Charger No" value={form.charger_no} onChange={(value) => setForm({ ...form, charger_no: value })} disabled={!canEditAssignment} />
-                      <Field label="Mouse No" value={form.mouse_no} onChange={(value) => setForm({ ...form, mouse_no: value })} disabled={!canEditAssignment} />
+                    <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/40 p-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAssignmentTab("details")}
+                          className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                            assignmentTab === "details" ? "bg-sky-500 text-slate-950" : "text-slate-300 hover:bg-white/5"
+                          }`}
+                        >
+                          Assignment Details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAssignmentTab("credentials")}
+                          className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                            assignmentTab === "credentials" ? "bg-emerald-500 text-slate-950" : "text-slate-300 hover:bg-white/5"
+                          }`}
+                        >
+                          Employee Credentials
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={saveAssignment}
-                      disabled={!canEditAssignment || savingAssignment}
-                      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-black text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                    >
-                      <Save size={16} />
-                      {savingAssignment ? "Saving..." : canEditAssignment ? "Save asset assignment" : "Admin or HR can edit assignment"}
-                    </button>
+
+                    {assignmentTab === "details" ? (
+                      <>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <Field label="Employee Name" value={form.employee_name} onChange={(value) => setForm({ ...form, employee_name: value })} disabled={!canEditAssignment} />
+                          <Field label="Employee ID" value={form.employee_id} onChange={(value) => setForm({ ...form, employee_id: value })} disabled={!canEditAssignment} />
+                          <Field label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} disabled={!canEditAssignment} />
+                          <Field label="Department" value={form.department} onChange={(value) => setForm({ ...form, department: value })} disabled={!canEditAssignment} />
+                          <Field label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} disabled={!canEditAssignment} />
+                          <Field label="Laptop No" value={form.laptop_no} onChange={(value) => setForm({ ...form, laptop_no: value })} disabled={!canEditAssignment} />
+                          <Field label="Charger No" value={form.charger_no} onChange={(value) => setForm({ ...form, charger_no: value })} disabled={!canEditAssignment} />
+                          <Field label="Mouse No" value={form.mouse_no} onChange={(value) => setForm({ ...form, mouse_no: value })} disabled={!canEditAssignment} />
+                          <Field label="Headset No" value={form.headset_no} onChange={(value) => setForm({ ...form, headset_no: value })} disabled={!canEditAssignment} />
+                          <Field label="Other Devices" value={form.other_devices} onChange={(value) => setForm({ ...form, other_devices: value })} disabled={!canEditAssignment} />
+                        </div>
+                        <button
+                          onClick={saveAssignment}
+                          disabled={!canEditAssignment || savingAssignment}
+                          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-black text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                        >
+                          <Save size={16} />
+                          {savingAssignment ? "Saving..." : canEditAssignment ? "Save asset assignment" : "Admin or HR can edit assignment"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                          Use this tab to keep the employee login username and password aligned with the assigned asset.
+                          The password is stored securely and is never shown again after saving.
+                        </div>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <Field
+                            label="Employee Username"
+                            value={credentialsForm.employee_username}
+                            onChange={(value) => setCredentialsForm({ ...credentialsForm, employee_username: value })}
+                            disabled={!canEditAssignment}
+                          />
+                          <div className="rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                              Password Status
+                            </div>
+                            <div className="mt-2 text-sm font-semibold text-white">
+                              {passwordConfigured ? "Password configured" : "Password not set"}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-400">
+                              Login should still use the employee organization email unless you change your auth flow later.
+                            </div>
+                          </div>
+                        </div>
+                        <label className="mt-4 block space-y-2">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            Employee Password
+                          </span>
+                          <div className="flex gap-2">
+                            <input
+                              type={showEmployeePassword ? "text" : "password"}
+                              value={credentialsForm.password}
+                              onChange={(e) => setCredentialsForm({ ...credentialsForm, password: e.target.value })}
+                              disabled={!canEditAssignment}
+                              placeholder="Set or replace employee password"
+                              className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowEmployeePassword((current) => !current)}
+                              disabled={!canEditAssignment}
+                              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-slate-900 px-4 text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label={showEmployeePassword ? "Hide password" : "Show password"}
+                            >
+                              {showEmployeePassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                          </div>
+                          <span className="text-xs text-slate-400">
+                            Minimum 8 characters. Leave it blank if you only want to update the username.
+                          </span>
+                        </label>
+                        <button
+                          onClick={saveCredentials}
+                          disabled={!canEditAssignment || savingCredentials}
+                          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                        >
+                          <KeyRound size={16} />
+                          {savingCredentials ? "Saving credentials..." : canEditAssignment ? "Save employee credentials" : "Admin or HR can edit credentials"}
+                        </button>
+                      </>
+                    )}
                   </section>
 
                   <section className="rounded-2xl border border-white/10 bg-white/5 p-4">

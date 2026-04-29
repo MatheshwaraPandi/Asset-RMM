@@ -1,10 +1,10 @@
 "use client";
 
 import { signIn, signOut } from "next-auth/react";
+import Link from "next/link";
 import { useState } from "react";
-import { Mail, ShieldCheck } from "lucide-react";
+import { KeyRound, Mail, ShieldCheck } from "lucide-react";
 
-import { getBackendBaseUrl } from "@/lib/backend-url";
 import { orgConfig } from "@/lib/org";
 
 type Mode = "employee" | "admin";
@@ -27,10 +27,8 @@ async function resetSessionState() {
 export default function AuthPortal() {
   const [mode, setMode] = useState<Mode>("employee");
 
-  const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
-  const [otpRequested, setOtpRequested] = useState(false);
-  const [otpLoading, setOtpLoading] = useState(false);
+  const [employeeLogin, setEmployeeLogin] = useState("");
+  const [employeePassword, setEmployeePassword] = useState("");
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -39,37 +37,7 @@ export default function AuthPortal() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const requestOtp = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
-    setOtpLoading(true);
-
-    try {
-      const response = await fetch(`${getBackendBaseUrl()}/auth/request-otp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = (await response.json().catch(() => null)) as { detail?: string; message?: string } | null;
-      if (!response.ok) {
-        setError(data?.detail ?? "Unable to send OTP right now.");
-        return;
-      }
-
-      setOtpRequested(true);
-      setSuccess(data?.message ?? "OTP sent to your email address.");
-    } catch {
-      setError("Unable to send OTP right now.");
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-
-  const loginWithOtp = async (e: React.FormEvent<HTMLFormElement>) => {
+  const loginWithEmployeePassword = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
     setSuccess("");
@@ -77,15 +45,15 @@ export default function AuthPortal() {
 
     try {
       await resetSessionState();
-      const result = await signIn("employee-otp", {
-        email,
-        otp,
+      const result = await signIn("employee-password", {
+        login: employeeLogin,
+        password: employeePassword,
         callbackUrl: "/dashboard",
         redirect: false,
       });
 
       if (!result || result.error) {
-        setError("Invalid or expired OTP. Please request a fresh code.");
+        setError("Invalid username/email or password.");
         return;
       }
 
@@ -149,14 +117,14 @@ export default function AuthPortal() {
           </div>
 
           <p className="mt-6 max-w-3xl text-base leading-7 text-slate-300">
-            {orgConfig.subtitle}. Employees sign in with their company email and OTP, while HR and
+            {orgConfig.subtitle}. Employees sign in with their username or organization email and password, while HR and
             IT admins continue with their console credentials from the same screen.
           </p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <InfoCard title="Email OTP" text="Assigned employees can access their asset view using their company email and a one-time code." />
+            <InfoCard title="Username or Email" text="Assigned employees can sign in with either their employee username or their organization email." />
             <InfoCard title="Role Aware" text="Admins and HR keep their existing workflow, while employee access stays limited to their assigned asset records." />
-            <InfoCard title="Operational Visibility" text="Hardware info, repair status, invoices, and image uploads stay aligned in one shared system." />
+            <InfoCard title="Manual Password" text="Admins can set a default password manually, and employees can later change it using their old and new password." />
           </div>
         </section>
 
@@ -203,50 +171,55 @@ export default function AuthPortal() {
           {mode === "employee" ? (
             <div className="mt-6 space-y-5">
               <div className="flex items-start gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/8 p-4 text-sm text-slate-200">
-                <Mail className="mt-0.5 h-5 w-5 text-emerald-300" />
+                <KeyRound className="mt-0.5 h-5 w-5 text-emerald-300" />
                 <div>
-                  Use the email address assigned to your asset in the admin console. We will send a
-                  one-time code to that inbox.
+                  Use the employee username or organization email assigned in the admin console.
+                  Your default password can be set manually from the Operations Console.
                 </div>
               </div>
 
-              <form onSubmit={requestOtp} className="space-y-4">
+              <form onSubmit={loginWithEmployeePassword} className="space-y-4">
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
+                  type="text"
+                  value={employeeLogin}
+                  onChange={(e) => setEmployeeLogin(e.target.value)}
+                  placeholder="username or name@company.com"
+                  className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-4 text-white outline-none focus:border-emerald-400"
+                  required
+                />
+                <input
+                  type="password"
+                  value={employeePassword}
+                  onChange={(e) => setEmployeePassword(e.target.value)}
+                  placeholder="Password"
                   className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-4 text-white outline-none focus:border-emerald-400"
                   required
                 />
                 <button
                   type="submit"
-                  disabled={otpLoading}
+                  disabled={signingIn}
                   className="w-full rounded-2xl bg-emerald-500 px-4 py-4 text-sm font-black text-slate-950 transition hover:bg-emerald-400 disabled:opacity-60"
                 >
-                  {otpLoading ? "Sending OTP..." : "Send OTP"}
+                  {signingIn ? "Signing in..." : "Open employee dashboard"}
                 </button>
               </form>
 
-              <form onSubmit={loginWithOtp} className="space-y-4">
-                <input
-                  type="text"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                  placeholder="Enter 6-digit OTP"
-                  className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-4 text-white outline-none focus:border-emerald-400"
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={!otpRequested || signingIn}
-                  className="w-full rounded-2xl bg-white px-4 py-4 text-sm font-black text-slate-950 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                >
-                  {signingIn ? "Signing in..." : "Verify OTP and continue"}
-                </button>
-              </form>
+              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+                  <Mail className="h-4 w-4 text-emerald-300" />
+                  Change password
+                </div>
+                <p className="text-sm text-slate-400">
+                  Use your current password and a new password. No SMTP or email reset flow is required.
+                </p>
+              </div>
+
+              <Link
+                href="/reset-password"
+                className="block text-center text-sm font-semibold text-emerald-200 underline underline-offset-4"
+              >
+                Change employee password
+              </Link>
             </div>
           ) : (
             <div className="mt-6 space-y-5">

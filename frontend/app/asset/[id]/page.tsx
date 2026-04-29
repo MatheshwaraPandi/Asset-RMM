@@ -71,6 +71,8 @@ export default async function AssetPage(props: PageProps) {
               <div><span className="text-slate-400">Laptop No:</span> {formatValue(asset.laptop_no)}</div>
               <div><span className="text-slate-400">Charger No:</span> {formatValue(asset.charger_no)}</div>
               <div><span className="text-slate-400">Mouse No:</span> {formatValue(asset.mouse_no)}</div>
+              <div><span className="text-slate-400">Headset No:</span> {formatValue(asset.headset_no)}</div>
+              <div><span className="text-slate-400">Other Devices:</span> {formatValue(asset.other_devices)}</div>
             </div>
           </div>
 

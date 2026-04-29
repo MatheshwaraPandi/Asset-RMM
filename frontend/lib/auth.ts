@@ -31,13 +31,13 @@ async function authenticateAdmin(username: string, password: string) {
   return (await response.json()) as BackendTokenResponse;
 }
 
-async function authenticateEmployee(email: string, otp: string) {
-  const response = await fetch(`${getBackendBaseUrl()}/auth/verify-otp`, {
+async function authenticateEmployee(login: string, password: string) {
+  const response = await fetch(`${getBackendBaseUrl()}/auth/employee-login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email, otp }),
+    body: JSON.stringify({ login, password }),
     cache: "no-store",
   });
 
@@ -81,26 +81,26 @@ export const authOptions: NextAuthOptions = {
       },
     }),
     CredentialsProvider({
-      id: "employee-otp",
-      name: "Employee Email OTP",
+      id: "employee-password",
+      name: "Employee Username or Email Password",
       credentials: {
-        email: { label: "Email", type: "email" },
-        otp: { label: "OTP", type: "text" },
+        login: { label: "Username or Email", type: "text" },
+        password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.otp) {
+        if (!credentials?.login || !credentials?.password) {
           return null;
         }
 
-        const data = await authenticateEmployee(credentials.email, credentials.otp);
+        const data = await authenticateEmployee(credentials.login, credentials.password);
         if (!data) {
           return null;
         }
 
         return {
-          id: data.email ?? credentials.email,
-          name: data.name ?? data.email ?? credentials.email,
-          email: data.email ?? credentials.email,
+          id: data.email ?? credentials.login,
+          name: data.name ?? data.email ?? credentials.login,
+          email: data.email ?? undefined,
           accessToken: data.access_token,
           role: data.role,
         };

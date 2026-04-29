@@ -57,12 +57,20 @@ export default async function Dashboard() {
             </div>
             <div className="flex gap-3">
               {isEmployee ? null : (
-                <Link
-                  href="/admin"
-                  className="rounded-full bg-sky-600 px-5 py-3 text-sm font-bold text-white hover:bg-sky-500"
-                >
-                  Open Operations Console
-                </Link>
+                <>
+                  <Link
+                    href="/tracking"
+                    className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white hover:bg-white/10"
+                  >
+                    Open Tracking Center
+                  </Link>
+                  <Link
+                    href="/admin"
+                    className="rounded-full bg-sky-600 px-5 py-3 text-sm font-bold text-white hover:bg-sky-500"
+                  >
+                    Open Operations Console
+                  </Link>
+                </>
               )}
             </div>
           </div>
