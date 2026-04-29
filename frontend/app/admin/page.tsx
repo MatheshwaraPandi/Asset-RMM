@@ -1,4 +1,4 @@
-﻿import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { authOptions } from "@/lib/auth";
@@ -10,10 +10,19 @@ export default async function AdminPage() {
     redirect("/login");
   }
 
-  const accessToken = (session as any).accessToken as string | undefined;
+  const accessToken = session.accessToken;
   if (!accessToken) {
     redirect("/login");
   }
+  if (!["admin", "hr"].includes(session.role ?? "")) {
+    redirect("/dashboard");
+  }
 
-  return <AdminClient accessToken={accessToken} />;
+  return (
+    <AdminClient
+      accessToken={accessToken}
+      currentRole={session.role ?? "admin"}
+      currentUsername={session.user?.name ?? "operator"}
+    />
+  );
 }
