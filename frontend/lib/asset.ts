@@ -5,6 +5,7 @@ export type Asset = {
   employee_id?: string | null;
   email?: string | null;
   employee_username?: string | null;
+  laptop_username?: string | null;
   laptop_no?: string | null;
   charger_no?: string | null;
   mouse_no?: string | null;
@@ -77,6 +78,20 @@ export type AssetAssignmentHistory = {
   created_at: string;
 };
 
+export type AssetComponent = {
+  id: number;
+  asset_id: number;
+  component_type: string;
+  identifier?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  color?: string | null;
+  status?: string | null;
+  assigned_to?: string | null;
+  location?: string | null;
+  notes?: string | null;
+};
+
 export type AssetTracking = {
   asset: Asset;
   status_history: AssetStatusHistory[];
@@ -87,6 +102,7 @@ export type AssignmentForm = {
   employee_name: string;
   employee_id: string;
   email: string;
+  laptop_username: string;
   laptop_no: string;
   charger_no: string;
   mouse_no: string;
@@ -94,6 +110,7 @@ export type AssignmentForm = {
   other_devices: string;
   department: string;
   location: string;
+  laptop_password: string;
 };
 
 export type ServiceForm = {
@@ -110,6 +127,7 @@ export const emptyForm: AssignmentForm = {
   employee_name: "",
   employee_id: "",
   email: "",
+  laptop_username: "",
   laptop_no: "",
   charger_no: "",
   mouse_no: "",
@@ -117,6 +135,7 @@ export const emptyForm: AssignmentForm = {
   other_devices: "",
   department: "",
   location: "",
+  laptop_password: "",
 };
 
 export const emptyServiceForm: ServiceForm = {
@@ -134,6 +153,7 @@ export function getAssignmentForm(asset: Asset): AssignmentForm {
     employee_name: asset.employee_name ?? "",
     employee_id: asset.employee_id ?? "",
     email: asset.email ?? "",
+    laptop_username: asset.laptop_username ?? "",
     laptop_no: asset.laptop_no ?? "",
     charger_no: asset.charger_no ?? "",
     mouse_no: asset.mouse_no ?? "",
@@ -141,6 +161,7 @@ export function getAssignmentForm(asset: Asset): AssignmentForm {
     other_devices: asset.other_devices ?? "",
     department: asset.department ?? "",
     location: asset.location ?? "",
+    laptop_password: "",
   };
 }
 
@@ -182,6 +203,18 @@ export function getAppBaseUrl() {
 }
 
 export function getAssetPublicUrl(assetId: number) {
+  const configured = process.env.NEXT_PUBLIC_APP_URL;
+  const baseUrl =
+    configured && configured.trim().length > 0
+      ? configured
+      : typeof window !== "undefined"
+        ? window.location.origin
+        : getAppBaseUrl();
+
+  return `${baseUrl}/asset-public/${assetId}`;
+}
+
+export function getAssetAuthenticatedUrl(assetId: number) {
   const configured = process.env.NEXT_PUBLIC_APP_URL;
   const baseUrl =
     configured && configured.trim().length > 0

@@ -24,6 +24,8 @@ class Asset(Base):
     email = Column(String, nullable=True)
     employee_username = Column(String, nullable=True)
     employee_password_hash = Column(String, nullable=True)
+    laptop_username = Column(String, nullable=True)
+    laptop_password_hash = Column(String, nullable=True)
     laptop_no = Column(String, nullable=True)
     charger_no = Column(String, nullable=True)
     mouse_no = Column(String, nullable=True)
@@ -75,6 +77,23 @@ class Asset(Base):
     assignment_status_last_updated_at = Column(DateTime, nullable=True)
     assignment_status_last_updated_by = Column(String, nullable=True)
 
+    last_updated = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class AssetComponent(Base):
+    __tablename__ = "asset_components"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, index=True, nullable=False)
+    component_type = Column(String, nullable=False)
+    identifier = Column(String, nullable=True)
+    brand = Column(String, nullable=True)
+    model = Column(String, nullable=True)
+    color = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="In Use")
+    assigned_to = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
     last_updated = Column(DateTime, default=datetime.datetime.utcnow)
 
 

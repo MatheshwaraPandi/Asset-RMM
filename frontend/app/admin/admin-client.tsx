@@ -2,10 +2,11 @@
 
 import axios from "axios";
 import jsPDF from "jspdf";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Building2, Cpu, Download, Eye, EyeOff, FileText, KeyRound, Plus, Printer, RefreshCw, Save, ShieldCheck, Trash2, Upload, UserCog, Wrench } from "lucide-react";
+import { Building2, Box, Cpu, Download, Eye, EyeOff, FileText, KeyRound, Plus, RefreshCw, Save, ShieldCheck, Trash2, Upload, UserCog, Wrench } from "lucide-react";
 
 import { getBackendBaseUrl } from "@/lib/backend-url";
 import {
@@ -119,6 +120,7 @@ export default function AdminClient({
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
   const [creatingAsset, setCreatingAsset] = useState(false);
   const [deletingAsset, setDeletingAsset] = useState(false);
+  const [showLaptopPassword, setShowLaptopPassword] = useState(false);
 
   const [laptopFrontFile, setLaptopFrontFile] = useState<File | null>(null);
   const [laptopRearFile, setLaptopRearFile] = useState<File | null>(null);
@@ -228,6 +230,7 @@ export default function AdminClient({
     });
     setPasswordConfigured(false);
     setShowEmployeePassword(false);
+    setShowLaptopPassword(false);
     setAssignmentTab("details");
     setLaptopFrontFile(null);
     setLaptopRearFile(null);
@@ -251,6 +254,8 @@ export default function AdminClient({
           employee_name: "Unassigned Employee",
           employee_id: "",
           email: "",
+          employee_username: "",
+          laptop_username: "",
           laptop_no: "",
           charger_no: "",
           mouse_no: "",
@@ -494,108 +499,6 @@ export default function AdminClient({
     }
   };
 
-  const printSelectedQr = () => {
-    if (!selected || !qrPrintRef.current) return;
-
-    const qrMarkup = qrPrintRef.current.innerHTML;
-    const assetName = getAssetDisplayName(selected);
-    const assetUrl = getAssetPublicUrl(selected.id);
-    const safeAssetName = escapeHtml(assetName);
-    const safeEmployeeId = escapeHtml(String(formatValue(selected.employee_id)));
-    const safeLaptopNo = escapeHtml(String(formatValue(selected.laptop_no)));
-    const safeAssetUrl = escapeHtml(assetUrl);
-    const printWindow = window.open("", "_blank", "width=900,height=700");
-    if (!printWindow) {
-      setError("Popup blocked. Allow popups to print the QR code.");
-      return;
-    }
-
-    printWindow.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <title>Print QR - ${safeAssetName}</title>
-          <style>
-            body {
-              font-family: "Segoe UI", Arial, sans-serif;
-              margin: 0;
-              padding: 32px;
-              color: #0f172a;
-              background: #ffffff;
-            }
-            .sheet {
-              max-width: 640px;
-              margin: 0 auto;
-              border: 2px solid #0f172a;
-              border-radius: 24px;
-              padding: 32px;
-              text-align: center;
-            }
-            .brand {
-              font-size: 12px;
-              letter-spacing: 0.24em;
-              text-transform: uppercase;
-              color: #0f766e;
-              font-weight: 700;
-            }
-            .title {
-              font-size: 28px;
-              font-weight: 800;
-              margin-top: 12px;
-            }
-            .meta {
-              margin-top: 8px;
-              font-size: 14px;
-              color: #334155;
-            }
-            .qr {
-              margin: 28px auto 0;
-              width: 280px;
-              height: 280px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              border: 1px solid #cbd5e1;
-              border-radius: 20px;
-              padding: 16px;
-            }
-            .url {
-              margin-top: 18px;
-              font-size: 12px;
-              word-break: break-all;
-              color: #0369a1;
-            }
-            @media print {
-              body {
-                padding: 0;
-              }
-              .sheet {
-                border: none;
-                max-width: none;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="sheet">
-            <div class="brand">${escapeHtml(orgConfig.name)}</div>
-            <div class="title">${safeAssetName}</div>
-            <div class="meta">Employee ID: ${safeEmployeeId} | Laptop No: ${safeLaptopNo}</div>
-            <div class="qr">${qrMarkup}</div>
-            <div class="url">${safeAssetUrl}</div>
-          </div>
-          <script>
-            window.onload = () => {
-              window.print();
-              window.onafterprint = () => window.close();
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
-
   const downloadSelectedQrPdf = async () => {
     if (!selected || !qrPrintRef.current) return;
 
@@ -668,7 +571,7 @@ export default function AdminClient({
       doc.setFontSize(9);
       doc.setTextColor(100, 116, 139);
       doc.text(
-        `Generated from RMM Lite on ${new Date().toLocaleString()}`,
+        `Generated from ${orgConfig.name} on ${new Date().toLocaleString()}`,
         pageWidth / 2,
         pageHeight - 28,
         { align: "center" }
@@ -682,7 +585,7 @@ export default function AdminClient({
   };
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_32%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_36%),linear-gradient(180deg,#08111f_0%,#0f172a_45%,#111827_100%)] px-4 py-8 text-white">
+    <main className="min-h-screen bg-transparent px-4 py-8 text-white">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="overflow-hidden rounded-[32px] border border-white/10 bg-white/5 shadow-[0_30px_120px_rgba(2,6,23,0.45)] backdrop-blur">
           <div className="grid gap-6 px-6 py-8 lg:grid-cols-[1.4fr,0.8fr] lg:px-8">
@@ -692,7 +595,7 @@ export default function AdminClient({
                 {orgConfig.name}
               </div>
               <h1 className="mt-4 max-w-3xl text-4xl font-black tracking-tight text-white">
-                RMM Lite Operations Console
+                Operations Console
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
                 {orgConfig.subtitle}. Monitor employee assets, maintain repair handover records,
@@ -713,6 +616,15 @@ export default function AdminClient({
               <StatCard icon={<UserCog size={18} />} label="Assigned Users" value={stats.assigned} />
               <StatCard icon={<Wrench size={18} />} label="In Service" value={stats.inService} />
               <StatCard icon={<FileText size={18} />} label="Invoices" value={stats.invoices} />
+            </div>
+            <div className="mt-4 px-6 lg:px-8">
+              <Link
+                href="/device-dashboard"
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/80 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10"
+              >
+                <Box size={16} />
+                Device Dashboard
+              </Link>
             </div>
           </div>
         </section>
@@ -851,13 +763,6 @@ export default function AdminClient({
                           <Download size={16} />
                           QR PDF
                         </button>
-                        <button
-                          onClick={printSelectedQr}
-                          className="inline-flex items-center gap-2 rounded-xl border border-sky-400/30 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-500/20"
-                        >
-                          <Printer size={16} />
-                          Print QR
-                        </button>
                         {canEditAssignment ? (
                           <button
                             onClick={deleteSelectedAsset}
@@ -896,6 +801,7 @@ export default function AdminClient({
                       <div>Employee: {formatValue(selected.employee_name)}</div>
                       <div>Employee ID: {formatValue(selected.employee_id)}</div>
                       <div>Employee Username: {formatValue(selected.employee_username ?? selected.email)}</div>
+                      <div>Laptop Username: {formatValue(selected.laptop_username)}</div>
                       <div>Department: {formatValue(selected.department)}</div>
                       <div>Location: {formatValue(selected.location)}</div>
                       <div>Laptop No: {formatValue(selected.laptop_no)}</div>
@@ -945,6 +851,7 @@ export default function AdminClient({
                           <Field label="Employee Name" value={form.employee_name} onChange={(value) => setForm({ ...form, employee_name: value })} disabled={!canEditAssignment} />
                           <Field label="Employee ID" value={form.employee_id} onChange={(value) => setForm({ ...form, employee_id: value })} disabled={!canEditAssignment} />
                           <Field label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} disabled={!canEditAssignment} />
+                          <Field label="Laptop Username" value={form.laptop_username} onChange={(value) => setForm({ ...form, laptop_username: value })} disabled={!canEditAssignment} />
                           <Field label="Department" value={form.department} onChange={(value) => setForm({ ...form, department: value })} disabled={!canEditAssignment} />
                           <Field label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} disabled={!canEditAssignment} />
                           <Field label="Laptop No" value={form.laptop_no} onChange={(value) => setForm({ ...form, laptop_no: value })} disabled={!canEditAssignment} />
@@ -953,6 +860,33 @@ export default function AdminClient({
                           <Field label="Headset No" value={form.headset_no} onChange={(value) => setForm({ ...form, headset_no: value })} disabled={!canEditAssignment} />
                           <Field label="Other Devices" value={form.other_devices} onChange={(value) => setForm({ ...form, other_devices: value })} disabled={!canEditAssignment} />
                         </div>
+                        <label className="mt-4 block space-y-2">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            Laptop Password
+                          </span>
+                          <div className="flex gap-2">
+                            <input
+                              type={showLaptopPassword ? "text" : "password"}
+                              value={form.laptop_password}
+                              onChange={(e) => setForm({ ...form, laptop_password: e.target.value })}
+                              disabled={!canEditAssignment}
+                              placeholder="Set or replace laptop password"
+                              className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowLaptopPassword((current) => !current)}
+                              disabled={!canEditAssignment}
+                              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-slate-900 px-4 text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label={showLaptopPassword ? "Hide password" : "Show password"}
+                            >
+                              {showLaptopPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                          </div>
+                          <span className="text-xs text-slate-400">
+                            Minimum 8 characters. Leave blank to keep the current laptop password.
+                          </span>
+                        </label>
                         <button
                           onClick={saveAssignment}
                           disabled={!canEditAssignment || savingAssignment}
@@ -1270,7 +1204,11 @@ function UploadField({
       />
       {preview ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img alt={label} src={preview} className="h-32 w-full rounded-xl border border-white/10 object-cover" />
+        <img
+          alt={label}
+          src={preview}
+          className="h-32 w-32 rounded-xl border border-white/10 bg-slate-950 object-contain"
+        />
       ) : (
         <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-white/10 bg-slate-900/60 text-sm text-slate-500">
           No image uploaded

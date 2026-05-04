@@ -12,6 +12,7 @@ BUILD_ROOT = Path(tempfile.gettempdir()) / "asset-rmm-agent-build"
 DIST_TARGET = BASE_DIR / "dist_fresh"
 EXE_NAME = "AssetScanner_v2"
 ENTRYPOINT = BASE_DIR / "agent.py"
+ENV_TEMPLATE = BASE_DIR / "agent.env.example"
 
 
 def build() -> Path:
@@ -39,6 +40,10 @@ def build() -> Path:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     final_exe = DIST_TARGET / f"{EXE_NAME}_{timestamp}.exe"
     shutil.copy2(built_exe, final_exe)
+
+    if ENV_TEMPLATE.exists():
+        shutil.copy2(ENV_TEMPLATE, DIST_TARGET / "agent.env.example")
+
     return final_exe
 
 

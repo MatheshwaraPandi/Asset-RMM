@@ -124,6 +124,7 @@ def _issue_session_payload(*, subject: str, role: str, email: str | None = None,
         "role": role,
         "name": name,
         "email": email,
+        "asset_id": asset_id,
     }
 
 
@@ -232,16 +233,25 @@ def get_current_user(
         )
 
     if role == "employee":
-        email = crud.normalize_email(payload.get("email") or subject)
-        asset = crud.get_asset_by_email(db, email or "")
+        asset_id = payload.get("asset_id")
+        email = crud.normalize_email(payload.get("email"))
+        
+        asset = None
+        if asset_id:
+            asset = crud.get_asset_by_id(db, asset_id)
+        if not asset and email:
+            asset = crud.get_asset_by_email(db, email)
+            
         if not asset:
             raise HTTPException(status_code=401, detail="Unauthorized")
+            
+        email = email or getattr(asset, "email", None)
         return AuthenticatedUser(
-            username=email or subject,
+            username=email or subject or str(asset.id),
             role="employee",
             email=email,
-            name=getattr(asset, "employee_name", None) or email,
-            asset_id=getattr(asset, "id", None),
+            name=getattr(asset, "employee_name", None) or email or subject,
+            asset_id=asset.id,
         )
 
     raise HTTPException(status_code=401, detail="Unauthorized")
@@ -334,6 +344,7 @@ def get_me(user: AuthenticatedUser = Depends(get_current_user)):
         "role": user.role,
         "email": user.email,
         "name": user.name,
+        "asset_id": user.asset_id,
     }
 
 
@@ -522,6 +533,22 @@ def get_assets(
     return crud.get_assets(db)
 
 
+@app.get("/assets/{asset_id}", response_model=schemas.AssetOut)
+def get_asset(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_roles("admin", "hr", "employee")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if user.role == "employee":
+        if user.asset_id != asset_id and crud.normalize_email(asset.email) != crud.normalize_email(user.email):
+            raise HTTPException(status_code=403, detail="Forbidden")
+    return asset
+
+
 @app.post("/assets", response_model=schemas.AssetOut, status_code=201)
 def create_asset(
     asset: schemas.AssetManualCreate,
@@ -529,14 +556,6 @@ def create_asset(
     _: models.Admin = Depends(require_roles("admin", "hr")),
 ):
     return crud.create_manual_asset(db, asset)
-
-
-@app.get("/public/assets/{asset_id}", response_model=schemas.AssetOut)
-def get_public_asset(asset_id: int, db: Session = Depends(get_db)):
-    asset = crud.get_asset_by_id(db, asset_id)
-    if not asset:
-        raise HTTPException(status_code=404, detail="Asset not found")
-    return asset
 
 
 @app.delete("/assets/{asset_id}", status_code=204)
@@ -558,6 +577,11 @@ def update_asset(
     db: Session = Depends(get_db),
     user: AuthenticatedUser = Depends(require_roles("admin", "hr")),
 ):
+    payload = update.model_dump(exclude_unset=True) if hasattr(update, "model_dump") else update.dict(exclude_unset=True)
+    laptop_password = (payload.get("laptop_password") or "").strip()
+    if laptop_password and len(laptop_password) < 8:
+        raise HTTPException(status_code=400, detail="Laptop password must be at least 8 characters long")
+
     asset = crud.update_asset_assignment(db, asset_id, update, updated_by=user.username)
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -609,6 +633,107 @@ def update_asset_credentials(
         "email": getattr(asset, "email", None),
         "password_configured": bool(getattr(asset, "employee_password_hash", None)),
     }
+
+
+@app.put("/assets/{asset_id}/self-service", response_model=schemas.AssetOut)
+def update_employee_asset_self_service(
+    asset_id: int,
+    payload: schemas.EmployeeAssetSelfUpdate,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_roles("employee")),
+):
+    data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
+    laptop_password = (data.get("laptop_password") or "").strip()
+    if laptop_password and len(laptop_password) < 8:
+        raise HTTPException(status_code=400, detail="Laptop password must be at least 8 characters long")
+
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if user.asset_id != asset_id and crud.normalize_email(asset.email) != crud.normalize_email(user.email):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    updated = crud.update_asset_employee_profile(
+        db,
+        asset_id=asset_id,
+        update=payload,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return updated
+
+
+@app.post("/assets/{asset_id}/self-service-upload-token", response_model=schemas.UploadTokenOut)
+def ensure_employee_upload_token(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_roles("employee")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if user.asset_id != asset_id and crud.normalize_email(asset.email) != crud.normalize_email(user.email):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    if not asset.upload_token:
+        asset.upload_token = secrets.token_urlsafe(24)
+        db.commit()
+        db.refresh(asset)
+
+    return {"upload_token": asset.upload_token}
+
+
+@app.get("/assets/{asset_id}/components", response_model=list[schemas.AssetComponentOut])
+def get_asset_components(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return crud.get_asset_components(db, asset_id)
+
+
+@app.post("/assets/{asset_id}/components", response_model=schemas.AssetComponentOut, status_code=201)
+def create_asset_component(
+    asset_id: int,
+    payload: schemas.AssetComponentCreate,
+    db: Session = Depends(get_db),
+    _: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    component = crud.create_asset_component(db, asset_id, payload)
+    return component
+
+
+@app.put("/components/{component_id}", response_model=schemas.AssetComponentOut)
+def update_asset_component(
+    component_id: int,
+    payload: schemas.AssetComponentUpdate,
+    db: Session = Depends(get_db),
+    _: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    component = crud.update_asset_component(db, component_id, payload)
+    if not component:
+        raise HTTPException(status_code=404, detail="Component not found")
+    return component
+
+
+@app.delete("/components/{component_id}", status_code=204)
+def delete_asset_component(
+    component_id: int,
+    db: Session = Depends(get_db),
+    _: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    deleted = crud.delete_asset_component(db, component_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Component not found")
+    return None
 
 
 @app.get("/assets/{asset_id}/tracking", response_model=schemas.AssetTrackingOut)
@@ -667,7 +792,7 @@ def upload_service_invoice(
     asset_id: int,
     invoice: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: models.Admin = Depends(require_roles("admin", "hr")),
+    user: AuthenticatedUser = Depends(require_roles("admin", "hr")),
 ):
     asset = crud.get_asset_by_id(db, asset_id)
     if not asset:
@@ -733,6 +858,18 @@ def upload_images(
 
     db.commit()
     db.refresh(asset)
+    return asset
+
+
+@app.get("/public/asset/{asset_id}", response_model=schemas.AssetOut)
+def get_public_asset(
+    asset_id: int,
+    db: Session = Depends(get_db),
+):
+    """Get asset details without authentication - used for QR code scanning."""
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
     return asset
 
 

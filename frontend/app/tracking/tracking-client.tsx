@@ -4,10 +4,10 @@ import axios from "axios";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRightLeft, Boxes, CalendarClock, History, RefreshCw, Save, Search } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, BookOpen, Boxes, CalendarClock, History, RefreshCw, Save, Search } from "lucide-react";
 
 import { getBackendBaseUrl } from "@/lib/backend-url";
-import type { Asset, AssetTracking } from "@/lib/asset";
+import type { Asset, AssetTracking, AssetComponent } from "@/lib/asset";
 import { formatValue, getAssetDisplayName } from "@/lib/asset";
 import { orgConfig } from "@/lib/org";
 
@@ -38,6 +38,10 @@ export default function TrackingClient({
   const [assetStatusDate, setAssetStatusDate] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("Assigned");
   const [assignmentStatusDate, setAssignmentStatusDate] = useState("");
+  const [components, setComponents] = useState<AssetComponent[]>([]);
+  const [loadingComponents, setLoadingComponents] = useState(false);
+  const [componentStatus, setComponentStatus] = useState<Record<number, string>>({});
+  const [savingComponent, setSavingComponent] = useState<number | null>(null);
 
   const fetchAssets = async () => {
     setLoadingAssets(true);
@@ -48,8 +52,21 @@ export default function TrackingClient({
       });
       setAssets(res.data);
       setSelectedId((current) => current ?? res.data[0]?.id ?? null);
-    } catch {
-      setError("Failed to load assets for tracking.");
+    } catch (err) {
+      console.error("Failed to load assets:", err);
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 401) {
+          setError("Authentication failed. Please log in again.");
+        } else if (err.response?.status === 403) {
+          setError("Access denied. Insufficient permissions.");
+        } else if (err.response?.status >= 500) {
+          setError("Server error. Please try again later.");
+        } else {
+          setError(`Failed to load assets: ${err.response?.data?.detail || err.message}`);
+        }
+      } else {
+        setError("Network error. Please check your connection.");
+      }
     } finally {
       setLoadingAssets(false);
     }
@@ -67,10 +84,86 @@ export default function TrackingClient({
       setAssetStatusDate(res.data.asset.asset_status_date ?? "");
       setAssignmentStatus(res.data.asset.assignment_status ?? "Assigned");
       setAssignmentStatusDate(res.data.asset.assignment_status_date ?? "");
-    } catch {
-      setError("Failed to load asset tracking details.");
+    } catch (err) {
+      console.error("Failed to load asset tracking:", err);
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 401) {
+          setError("Authentication failed. Please log in again.");
+        } else if (err.response?.status === 403) {
+          setError("Access denied. Insufficient permissions.");
+        } else if (err.response?.status === 404) {
+          setError("Asset not found.");
+        } else if (err.response?.status >= 500) {
+          setError("Server error. Please try again later.");
+        } else {
+          setError(`Failed to load asset tracking: ${err.response?.data?.detail || err.message}`);
+        }
+      } else {
+        setError("Network error. Please check your connection.");
+      }
     } finally {
       setLoadingTracking(false);
+    }
+  };
+
+  const fetchComponents = async (assetId: number) => {
+    setLoadingComponents(true);
+    setError("");
+    try {
+      const res = await axios.get<AssetComponent[]>(`${getBackendBaseUrl()}/assets/${assetId}/components`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      setComponents(res.data);
+      setComponentStatus(
+        res.data.reduce((acc, component) => {
+          acc[component.id] = component.status ?? "In Use";
+          return acc;
+        }, {} as Record<number, string>)
+      );
+    } catch (err) {
+      console.error("Failed to load components:", err);
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 401) {
+          setError("Authentication failed. Please log in again.");
+        } else if (err.response?.status === 403) {
+          setError("Access denied. Insufficient permissions.");
+        } else if (err.response?.status === 404) {
+          setError("Asset components not found.");
+        } else if (err.response?.status >= 500) {
+          setError("Server error. Please try again later.");
+        } else {
+          setError(`Failed to load components: ${err.response?.data?.detail || err.message}`);
+        }
+      } else {
+        setError("Network error. Please check your connection.");
+      }
+    } finally {
+      setLoadingComponents(false);
+    }
+  };
+
+  const saveComponentStatus = async (componentId: number) => {
+    const status = componentStatus[componentId];
+    if (!status) return;
+    setSavingComponent(componentId);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await axios.put<AssetComponent>(
+        `${getBackendBaseUrl()}/components/${componentId}`,
+        { status },
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      setComponents((current) =>
+        current.map((component) =>
+          component.id === componentId ? { ...component, status: res.data.status ?? component.status } : component
+        )
+      );
+      setSuccess("Component status updated.");
+    } catch {
+      setError("Failed to save component status.");
+    } finally {
+      setSavingComponent(null);
     }
   };
 
@@ -82,6 +175,7 @@ export default function TrackingClient({
   useEffect(() => {
     if (selectedId) {
       fetchTracking(selectedId);
+      fetchComponents(selectedId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -148,7 +242,7 @@ export default function TrackingClient({
   const selectedAsset = tracking?.asset ?? assets.find((asset) => asset.id === selectedId) ?? null;
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.18),transparent_36%),linear-gradient(180deg,#08111f_0%,#0f172a_45%,#111827_100%)] px-4 py-8 text-white">
+    <main className="min-h-screen bg-transparent px-4 py-8 text-white relative">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-[0_30px_120px_rgba(2,6,23,0.45)] backdrop-blur">
           <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200">
@@ -171,12 +265,27 @@ export default function TrackingClient({
                 Dashboard
               </Link>
               <Link
+                href="/device-dashboard"
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white hover:bg-white/10"
+              >
+                <BookOpen size={16} />
+                Device Dashboard
+              </Link>
+              <Link
                 href="/admin"
                 className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-5 py-3 text-sm font-bold text-white hover:bg-sky-500"
               >
                 <Boxes size={16} />
                 Operations Console
               </Link>
+              <button
+                onClick={fetchAssets}
+                disabled={loadingAssets}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white hover:bg-white/10 disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={loadingAssets ? "animate-spin" : ""} />
+                {loadingAssets ? "Refreshing..." : "Refresh"}
+              </button>
             </div>
           </div>
           <div className="mt-6 grid gap-4 md:grid-cols-4">
@@ -189,7 +298,16 @@ export default function TrackingClient({
 
         {error ? (
           <div className="rounded-2xl border border-rose-700/40 bg-rose-950/40 px-4 py-3 text-sm text-rose-100">
-            {error}
+            <div className="flex items-center justify-between">
+              <span>{error}</span>
+              <button
+                onClick={fetchAssets}
+                disabled={loadingAssets}
+                className="ml-4 rounded-lg bg-rose-600/20 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-600/30 disabled:opacity-50"
+              >
+                {loadingAssets ? "Retrying..." : "Retry"}
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -278,7 +396,7 @@ export default function TrackingClient({
                   </div>
                 </div>
 
-                <div className="grid gap-6 2xl:grid-cols-[1.05fr,0.95fr]">
+                <div className="grid gap-6 2xl:grid-cols-[1.05fr]">
                   <section className="rounded-[28px] border border-white/10 bg-white/5 p-6">
                     <div className="flex items-center gap-2">
                       <CalendarClock size={18} className="text-sky-300" />
@@ -348,26 +466,91 @@ export default function TrackingClient({
                       {saving ? "Saving tracking..." : "Save tracking status"}
                     </button>
                   </section>
-
-                  <section className="rounded-[28px] border border-white/10 bg-white/5 p-6">
-                    <div className="flex items-center gap-2">
-                      <ArrowRightLeft size={18} className="text-emerald-300" />
-                      <h3 className="text-xl font-black">Assignment Snapshot</h3>
-                    </div>
-                    <div className="mt-5 space-y-4">
-                      <SnapshotRow label="Current employee" value={selectedAsset.employee_name} />
-                      <SnapshotRow label="Employee ID" value={selectedAsset.employee_id} />
-                      <SnapshotRow label="Organization email" value={selectedAsset.email} />
-                      <SnapshotRow label="Laptop number" value={selectedAsset.laptop_no} />
-                      <SnapshotRow label="Current assignment status" value={selectedAsset.assignment_status ?? "Assigned"} />
-                      <SnapshotRow label="Assignment date" value={selectedAsset.assignment_status_date} />
-                      <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-100">
-                        Reassignments are tracked automatically whenever the employee assignment is changed
-                        from the Operations Console, and you can also update the assignment status here.
-                      </div>
-                    </div>
-                  </section>
                 </div>
+
+                <section className="rounded-[28px] border border-white/10 bg-white/5 p-6">
+                  <div className="flex items-center gap-2">
+                    <Boxes size={18} className="text-cyan-300" />
+                    <h3 className="text-xl font-black">Device Component Tracking</h3>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-300">
+                    Each hardware component is tracked individually. Update status for each device type and keep a clear audit trail for spares or discarded equipment.
+                  </p>
+                  <div className="mt-5 overflow-x-auto">
+                    <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
+                      <thead>
+                        <tr className="bg-slate-900/80 text-slate-300">
+                          <th className="border-b border-white/10 px-4 py-3">Component</th>
+                          <th className="border-b border-white/10 px-4 py-3">Identifier</th>
+                          <th className="border-b border-white/10 px-4 py-3">Brand</th>
+                          <th className="border-b border-white/10 px-4 py-3">Model</th>
+                          <th className="border-b border-white/10 px-4 py-3">Color</th>
+                          <th className="border-b border-white/10 px-4 py-3">Status</th>
+                          <th className="border-b border-white/10 px-4 py-3">Assigned To</th>
+                          <th className="border-b border-white/10 px-4 py-3">Location</th>
+                          <th className="border-b border-white/10 px-4 py-3">Notes</th>
+                          <th className="border-b border-white/10 px-4 py-3">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loadingComponents ? (
+                          <tr>
+                            <td colSpan={10} className="px-4 py-6 text-center text-slate-400">
+                              Loading device tracking details...
+                            </td>
+                          </tr>
+                        ) : components.length === 0 ? (
+                          <tr>
+                            <td colSpan={10} className="px-4 py-6 text-center text-slate-400">
+                              No component records found for this asset.
+                            </td>
+                          </tr>
+                        ) : (
+                          components.map((component) => (
+                            <tr key={component.id} className="border-t border-white/10">
+                              <td className="px-4 py-3 text-white">{component.component_type}</td>
+                              <td className="px-4 py-3 text-slate-300">{formatValue(component.identifier)}</td>
+                              <td className="px-4 py-3 text-slate-300">{formatValue(component.brand)}</td>
+                              <td className="px-4 py-3 text-slate-300">{formatValue(component.model)}</td>
+                              <td className="px-4 py-3 text-slate-300">{formatValue(component.color)}</td>
+                              <td className="px-4 py-3 text-slate-300">
+                                <select
+                                  value={componentStatus[component.id] ?? component.status ?? "In Use"}
+                                  onChange={(e) =>
+                                    setComponentStatus((current) => ({
+                                      ...current,
+                                      [component.id]: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full rounded-2xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                                >
+                                  {assetStatusOptions.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-4 py-3 text-slate-300">{formatValue(component.assigned_to)}</td>
+                              <td className="px-4 py-3 text-slate-300">{formatValue(component.location)}</td>
+                              <td className="px-4 py-3 text-slate-300">{formatValue(component.notes)}</td>
+                              <td className="px-4 py-3">
+                                <button
+                                  type="button"
+                                  onClick={() => saveComponentStatus(component.id)}
+                                  disabled={savingComponent === component.id}
+                                  className="inline-flex items-center justify-center rounded-2xl bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+                                >
+                                  {savingComponent === component.id ? "Saving..." : "Save"}
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
 
                 <div className="grid gap-6 2xl:grid-cols-2">
                   <HistoryCard
@@ -441,15 +624,6 @@ function FieldBlock({ label, children }: { label: string; children: ReactNode })
       <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</span>
       {children}
     </label>
-  );
-}
-
-function SnapshotRow({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/50 px-4 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
-      <div className="mt-1 text-sm text-white">{formatValue(value)}</div>
-    </div>
   );
 }
 
