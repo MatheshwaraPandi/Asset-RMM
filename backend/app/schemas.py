@@ -29,6 +29,9 @@ class AssetAssignmentUpdate(BaseModel):
     employee_name: Optional[str] = None
     employee_id: Optional[str] = None
     email: Optional[str] = None
+    employee_username: Optional[str] = None
+    laptop_username: Optional[str] = None
+    laptop_password: Optional[str] = None
     laptop_no: Optional[str] = None
     charger_no: Optional[str] = None
     mouse_no: Optional[str] = None
@@ -42,6 +45,8 @@ class AssetManualCreate(BaseModel):
     employee_name: Optional[str] = None
     employee_id: Optional[str] = None
     email: Optional[str] = None
+    employee_username: Optional[str] = None
+    laptop_username: Optional[str] = None
     laptop_no: Optional[str] = None
     charger_no: Optional[str] = None
     mouse_no: Optional[str] = None
@@ -53,6 +58,10 @@ class AssetManualCreate(BaseModel):
     os_name: Optional[str] = None
     brand: Optional[str] = None
     model: Optional[str] = None
+    model_number: Optional[str] = None
+    cpu: Optional[str] = None
+    ram: Optional[str] = None
+    storage: Optional[str] = None
     serial_number: Optional[str] = None
 
 
@@ -66,12 +75,22 @@ class AssetServiceUpdate(BaseModel):
     service_invoice_amount: Optional[str] = None
 
 
+class EmployeeAssetSelfUpdate(BaseModel):
+    employee_name: Optional[str] = None
+    email: Optional[str] = None
+    location: Optional[str] = None
+    other_devices: Optional[str] = None
+    laptop_username: Optional[str] = None
+    laptop_password: Optional[str] = None
+
+
 class AssetOut(BaseModel):
     id: int
     employee_name: Optional[str] = None
     employee_id: Optional[str] = None
     email: Optional[str] = None
     employee_username: Optional[str] = None
+    laptop_username: Optional[str] = None
     laptop_no: Optional[str] = None
     charger_no: Optional[str] = None
     mouse_no: Optional[str] = None
@@ -92,6 +111,11 @@ class AssetOut(BaseModel):
     os_name: Optional[str] = None
     brand: Optional[str] = None
     model: Optional[str] = None
+    model_number: Optional[str] = None
+    cpu: Optional[str] = None
+    ram: Optional[str] = None
+    storage: Optional[str] = None
+    serial_number: Optional[str] = None
     model_number: Optional[str] = None
     serial_number: Optional[str] = None
     cpu: Optional[str] = None
@@ -147,6 +171,9 @@ class PublicUploadInfoOut(BaseModel):
     id: int
     employee_name: Optional[str] = None
     employee_id: Optional[str] = None
+    hostname: Optional[str] = None
+    brand: Optional[str] = None
+    model: Optional[str] = None
     serial_number: Optional[str] = None
 
     laptop_front_image: Optional[str] = None
@@ -161,6 +188,7 @@ class Token(BaseModel):
     role: str
     name: Optional[str] = None
     email: Optional[str] = None
+    asset_id: Optional[int] = None
 
 
 class SessionUserOut(BaseModel):
@@ -168,6 +196,7 @@ class SessionUserOut(BaseModel):
     role: str
     email: Optional[str] = None
     name: Optional[str] = None
+    asset_id: Optional[int] = None
 
 
 class OTPRequest(BaseModel):
@@ -213,6 +242,42 @@ class AssetTrackingUpdate(BaseModel):
     asset_status_date: Optional[str] = None
     assignment_status: str
     assignment_status_date: Optional[str] = None
+
+
+class AssetComponentBase(BaseModel):
+    component_type: str
+    identifier: Optional[str] = None
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    color: Optional[str] = None
+    status: Optional[str] = None
+    assigned_to: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class AssetComponentCreate(AssetComponentBase):
+    pass
+
+
+class AssetComponentUpdate(BaseModel):
+    component_type: Optional[str] = None
+    identifier: Optional[str] = None
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    color: Optional[str] = None
+    status: Optional[str] = None
+    assigned_to: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class AssetComponentOut(AssetComponentBase):
+    id: int
+    asset_id: int
+
+    class Config:
+        from_attributes = True
 
 
 class AssetStatusHistoryOut(BaseModel):

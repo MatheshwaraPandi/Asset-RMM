@@ -15,7 +15,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-[#0B0F1A]">
+    <div className="flex min-h-screen bg-theme-background">
       <main className="flex-1 overflow-auto">{children}</main>
     </div>
   );

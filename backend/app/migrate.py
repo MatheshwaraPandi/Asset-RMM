@@ -12,6 +12,7 @@ def ensure_sqlite_columns(engine) -> None:
         conn.execute(text("CREATE TABLE IF NOT EXISTS password_reset_tokens (id INTEGER PRIMARY KEY)"))
         conn.execute(text("CREATE TABLE IF NOT EXISTS asset_status_history (id INTEGER PRIMARY KEY)"))
         conn.execute(text("CREATE TABLE IF NOT EXISTS asset_assignment_history (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE IF NOT EXISTS asset_components (id INTEGER PRIMARY KEY)"))
 
         cols = conn.execute(text("PRAGMA table_info(assets)"))
         existing = {row[1] for row in cols.fetchall()}
@@ -25,6 +26,8 @@ def ensure_sqlite_columns(engine) -> None:
         existing_status_history = {row[1] for row in status_history_cols.fetchall()}
         assignment_history_cols = conn.execute(text("PRAGMA table_info(asset_assignment_history)"))
         existing_assignment_history = {row[1] for row in assignment_history_cols.fetchall()}
+        asset_components_cols = conn.execute(text("PRAGMA table_info(asset_components)"))
+        existing_asset_components = {row[1] for row in asset_components_cols.fetchall()}
 
         desired_admin = {
             "username": "TEXT",
@@ -66,12 +69,28 @@ def ensure_sqlite_columns(engine) -> None:
             "created_at": "TEXT",
         }
 
+        desired_asset_components = {
+            "asset_id": "INTEGER",
+            "component_type": "TEXT",
+            "identifier": "TEXT",
+            "brand": "TEXT",
+            "model": "TEXT",
+            "color": "TEXT",
+            "status": "TEXT",
+            "assigned_to": "TEXT",
+            "location": "TEXT",
+            "notes": "TEXT",
+            "last_updated": "TEXT",
+        }
+
         desired = {
             "employee_name": "TEXT",
             "employee_id": "TEXT",
             "email": "TEXT",
             "employee_username": "TEXT",
             "employee_password_hash": "TEXT",
+            "laptop_username": "TEXT",
+            "laptop_password_hash": "TEXT",
             "laptop_no": "TEXT",
             "charger_no": "TEXT",
             "mouse_no": "TEXT",
@@ -138,6 +157,10 @@ def ensure_sqlite_columns(engine) -> None:
         for name, sql_type in desired_assignment_history.items():
             if name not in existing_assignment_history:
                 conn.execute(text(f"ALTER TABLE asset_assignment_history ADD COLUMN {name} {sql_type}"))
+
+        for name, sql_type in desired_asset_components.items():
+            if name not in existing_asset_components:
+                conn.execute(text(f"ALTER TABLE asset_components ADD COLUMN {name} {sql_type}"))
 
         for name, sql_type in desired.items():
             if name not in existing:

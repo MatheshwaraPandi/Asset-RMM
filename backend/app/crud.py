@@ -1,7 +1,7 @@
 ﻿import datetime
 from sqlalchemy.orm import Session
 
-from . import models, schemas
+from . import models, schemas, security
 
 DEFAULT_ASSET_STATUS = "In Use"
 DEFAULT_ASSIGNMENT_STATUS = "Assigned"
@@ -28,6 +28,7 @@ def _normalize_asset_payload(data: dict):
         "employee_id",
         "email",
         "employee_username",
+        "laptop_username",
         "laptop_no",
         "charger_no",
         "mouse_no",
@@ -35,6 +36,12 @@ def _normalize_asset_payload(data: dict):
         "other_devices",
         "department",
         "location",
+        "hostname",
+        "brand",
+        "model",
+        "cpu",
+        "ram",
+        "storage",
     ):
         value = normalized.get(key)
         if isinstance(value, str):
@@ -43,7 +50,7 @@ def _normalize_asset_payload(data: dict):
                 normalize_email(trimmed)
                 if key == "email"
                 else normalize_username(trimmed)
-                if key == "employee_username"
+                if key in ("employee_username", "laptop_username")
                 else (trimmed or None)
             )
     return normalized
@@ -192,6 +199,12 @@ def update_asset_assignment(
         "email": db_asset.email,
     }
 
+    laptop_password = data.pop("laptop_password", None)
+    if isinstance(laptop_password, str):
+        laptop_password = laptop_password.strip()
+        if laptop_password:
+            db_asset.laptop_password_hash = security.hash_password(laptop_password)
+
     for key, value in data.items():
         setattr(db_asset, key, value)
 
@@ -324,6 +337,128 @@ def update_asset_credentials(
     db.commit()
     db.refresh(db_asset)
     return db_asset
+
+
+def update_asset_employee_profile(
+    db: Session,
+    *,
+    asset_id: int,
+    update: schemas.EmployeeAssetSelfUpdate,
+):
+    db_asset = db.query(models.Asset).filter(models.Asset.id == asset_id).first()
+    if not db_asset:
+        return None
+
+    data = (
+        update.model_dump(exclude_unset=True)
+        if hasattr(update, "model_dump")
+        else update.dict(exclude_unset=True)
+    )
+    data = _normalize_asset_payload(data)
+
+    laptop_password = data.pop("laptop_password", None)
+    if isinstance(laptop_password, str):
+        laptop_password = laptop_password.strip()
+        if laptop_password:
+            db_asset.laptop_password_hash = security.hash_password(laptop_password)
+
+    for key in ("employee_name", "email", "location", "other_devices", "laptop_username"):
+        if key in data:
+            setattr(db_asset, key, data[key])
+
+    db_asset.last_updated = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(db_asset)
+    return db_asset
+
+
+def _normalize_component_payload(data: dict):
+    normalized = dict(data)
+    for key in (
+        "component_type",
+        "identifier",
+        "brand",
+        "model",
+        "color",
+        "status",
+        "assigned_to",
+        "location",
+        "notes",
+    ):
+        value = normalized.get(key)
+        if isinstance(value, str):
+            normalized[key] = value.strip() or None
+    return normalized
+
+
+def get_asset_components(db: Session, asset_id: int):
+    return (
+        db.query(models.AssetComponent)
+        .filter(models.AssetComponent.asset_id == asset_id)
+        .order_by(models.AssetComponent.id)
+        .all()
+    )
+
+
+def create_asset_component(
+    db: Session,
+    asset_id: int,
+    component: schemas.AssetComponentCreate,
+):
+    data = (
+        component.model_dump(exclude_unset=True)
+        if hasattr(component, "model_dump")
+        else component.dict(exclude_unset=True)
+    )
+    data = _normalize_component_payload(data)
+    data["asset_id"] = asset_id
+    db_component = models.AssetComponent(**data)
+    db_component.last_updated = datetime.datetime.utcnow()
+    db.add(db_component)
+    db.commit()
+    db.refresh(db_component)
+    return db_component
+
+
+def update_asset_component(
+    db: Session,
+    component_id: int,
+    update: schemas.AssetComponentUpdate,
+):
+    db_component = (
+        db.query(models.AssetComponent)
+        .filter(models.AssetComponent.id == component_id)
+        .first()
+    )
+    if not db_component:
+        return None
+
+    data = (
+        update.model_dump(exclude_unset=True)
+        if hasattr(update, "model_dump")
+        else update.dict(exclude_unset=True)
+    )
+    data = _normalize_component_payload(data)
+    for key, value in data.items():
+        setattr(db_component, key, value)
+
+    db_component.last_updated = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(db_component)
+    return db_component
+
+
+def delete_asset_component(db: Session, component_id: int):
+    db_component = (
+        db.query(models.AssetComponent)
+        .filter(models.AssetComponent.id == component_id)
+        .first()
+    )
+    if not db_component:
+        return False
+    db.delete(db_component)
+    db.commit()
+    return True
 
 
 def get_asset_by_id(db: Session, asset_id: int):

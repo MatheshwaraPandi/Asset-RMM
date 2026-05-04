@@ -19,7 +19,7 @@ import wmi
 DEFAULT_RETRY_SECONDS = int(os.getenv("RMM_AGENT_RETRY_SECONDS", "30"))
 DEFAULT_MAX_RETRIES = int(os.getenv("RMM_AGENT_MAX_RETRIES", "5"))
 LOG_FILE = os.path.join(os.getenv("TEMP", os.getcwd()), "asset_agent.log")
-DEFAULT_EMBEDDED_SERVER_URL = "http://192.168.1.34:8000"
+DEFAULT_EMBEDDED_SERVER_URL = os.getenv("RMM_AGENT_FALLBACK_URL", "http://192.168.1.3:8000").rstrip("/")
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
@@ -61,8 +61,10 @@ def _get_default_server_url() -> str:
     return (
         runtime_env.get("RMM_API_URL")
         or runtime_env.get("BACKEND_API_URL")
+        or runtime_env.get("NEXT_PUBLIC_BACKEND_API_URL")
         or os.getenv("RMM_API_URL")
         or os.getenv("BACKEND_API_URL")
+        or os.getenv("NEXT_PUBLIC_BACKEND_API_URL")
         or DEFAULT_EMBEDDED_SERVER_URL
     ).rstrip("/")
 
@@ -509,8 +511,8 @@ def get_system_specs() -> dict:
     }
 
 
-def post_specs(server_url: str) -> None:
-    payload = get_system_specs()
+def post_specs(server_url: str, payload: dict | None = None) -> None:
+    payload = payload or get_system_specs()
     log_agent_message(
         "Uploading asset info for "
         f"employee={payload.get('employee_name') or 'UNKNOWN'} "
@@ -530,6 +532,51 @@ def post_specs(server_url: str) -> None:
     response.raise_for_status()
 
 
+def validate_server_url(server_url: str) -> str:
+    normalized = str(server_url or "").strip().rstrip("/")
+    if not normalized:
+        raise ValueError(
+            "Backend URL is not configured. Create an agent.env file next to the EXE with "
+            "RMM_API_URL=https://your-backend-host"
+        )
+    if not normalized.startswith(("http://", "https://")):
+        raise ValueError("Backend URL must start with http:// or https://")
+    return normalized
+
+
+def format_runtime_error(exc: Exception, server_url: str) -> str:
+    message = str(exc).strip() or exc.__class__.__name__
+    lowered = message.lower()
+
+    if "failed to establish a new connection" in lowered or "actively refused it" in lowered:
+        return (
+            "The agent could not connect to the backend server.\n\n"
+            f"Configured server: {server_url}\n\n"
+            "Check that the backend is running, the server IP/domain is correct in agent.env, "
+            "and port 8000 is reachable from this laptop."
+        )
+
+    if "timed out" in lowered:
+        return (
+            "The backend server did not respond in time.\n\n"
+            f"Configured server: {server_url}\n\n"
+            "Check network access, firewall rules, and whether this laptop can reach that server address."
+        )
+
+    if "404" in lowered:
+        return (
+            "The backend URL is reachable but the registration endpoint was not found.\n\n"
+            f"Configured server: {server_url}\n\n"
+            "Check that agent.env points to the API base URL, for example http://server:8000."
+        )
+
+    return (
+        "Asset upload failed.\n\n"
+        f"Configured server: {server_url}\n\n"
+        f"Details: {message}"
+    )
+
+
 def show_completion_message(title: str, message: str) -> None:
     try:
         root = tk.Tk()
@@ -542,11 +589,32 @@ def show_completion_message(title: str, message: str) -> None:
 
 
 def run(server_url: str, retry_seconds: int, max_retries: int, hide_console: bool) -> None:
+    try:
+        server_url = validate_server_url(server_url)
+    except Exception as exc:
+        log_agent_message(f"Server URL validation failed: {exc}")
+        show_completion_message(
+            "Asset Registration",
+            "Agent configuration is missing or invalid. Place an agent.env file next to the EXE with "
+            "RMM_API_URL=http://your-server:8000 and try again.",
+        )
+        return
+
+    try:
+        payload = get_system_specs()
+    except Exception as exc:
+        log_agent_message(f"System collection failed: {exc}")
+        show_completion_message(
+            "Asset Registration",
+            "The agent could not collect system information. Please contact IT and share the asset_agent.log file from your Temp folder.",
+        )
+        return
+
     for attempt in range(max_retries):
         try:
             if hide_console:
                 hide_console_window()
-            post_specs(server_url)
+            post_specs(server_url, payload=payload)
             show_completion_message(
                 "Asset Registration",
                 "System information uploaded successfully.",
@@ -557,7 +625,8 @@ def run(server_url: str, retry_seconds: int, max_retries: int, hide_console: boo
             if attempt == max_retries - 1:
                 show_completion_message(
                     "Asset Registration",
-                    "Failed to upload system information. Please contact IT and share the asset_agent.log file from your Temp folder.",
+                    f"{format_runtime_error(exc, server_url)}\n\n"
+                    "Please contact IT and share the asset_agent.log file from your Temp folder if this continues.",
                 )
                 return
             time.sleep(retry_seconds)

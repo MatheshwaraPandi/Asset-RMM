@@ -1,4 +1,9 @@
-﻿import { getBackendBaseUrl } from "@/lib/backend-url";
+﻿import AccordionSection from "@/components/accordion-section";
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+
+import { authOptions } from "@/lib/auth";
+import { getBackendBaseUrl } from "@/lib/backend-url";
 import type { Asset } from "@/lib/asset";
 import { formatValue, getAssetDisplayName } from "@/lib/asset";
 
@@ -6,11 +11,13 @@ type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-async function getAsset(id: string): Promise<Asset | null> {
-  const response = await fetch(
-    `${getBackendBaseUrl()}/public/assets/${encodeURIComponent(id)}`,
-    { cache: "no-store" }
-  );
+async function getAsset(id: string, accessToken: string): Promise<Asset | null> {
+  const response = await fetch(`${getBackendBaseUrl()}/assets/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
 
   if (!response.ok) {
     return null;
@@ -27,14 +34,18 @@ function imgUrl(path: string | null | undefined) {
 
 export default async function AssetPage(props: PageProps) {
   const { id } = await props.params;
-  const asset = await getAsset(id);
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) {
+    redirect("/login");
+  }
 
+  const asset = await getAsset(id, session.accessToken);
   if (!asset) {
     return (
-      <main className="min-h-screen bg-[#0B0F1A] px-4 py-10 text-white">
+      <main className="min-h-screen bg-theme-background px-4 py-10 text-theme-foreground">
         <div className="mx-auto max-w-3xl rounded-2xl border border-slate-800 bg-slate-950/30 p-6">
           <h1 className="text-2xl font-black">Asset not found</h1>
-          <p className="mt-2 text-slate-300">The QR link points to an unknown asset.</p>
+          <p className="mt-2 text-slate-300">This asset is unavailable or you do not have access.</p>
         </div>
       </main>
     );
@@ -45,124 +56,130 @@ export default async function AssetPage(props: PageProps) {
   const mouseImg = imgUrl(asset.mouse_image);
   const chargerImg = imgUrl(asset.charger_image);
   const invoiceUrl = imgUrl(asset.service_invoice_path);
+  const isAuthenticated = Boolean(session?.accessToken);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.14)_0%,transparent_40%),radial-gradient(circle_at_bottom_right,rgba(251,191,36,0.14)_0%,transparent_40%),linear-gradient(180deg,#0b0f1a_0%,#060812_100%)] px-4 py-10 text-white">
+    <main className="min-h-screen bg-theme-background px-4 py-10 text-theme-foreground">
       <div className="mx-auto max-w-3xl space-y-6">
         <header className="rounded-2xl border border-slate-800 bg-slate-950/30 p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-300">
             Employee Asset Details
           </p>
-          <h1 className="mt-3 text-3xl font-black">{getAssetDisplayName(asset)}</h1>
+          <h1 className="mt-3 text-3xl font-black text-white">{getAssetDisplayName(asset)}</h1>
           <p className="mt-2 text-sm text-slate-300">
-            Scanned via QR. Shows employee assignment, system info, and uploaded images.
+            {isAuthenticated
+              ? "Secure authenticated asset details for your assigned device."
+              : "Public preview only. Sign in to access your assigned asset securely."}
           </p>
         </header>
 
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/30 p-6">
-            <h2 className="text-lg font-black">Employee</h2>
-            <div className="mt-4 space-y-2 text-sm text-slate-200">
-              <div><span className="text-slate-400">Name:</span> {formatValue(asset.employee_name)}</div>
-              <div><span className="text-slate-400">Employee ID:</span> {formatValue(asset.employee_id)}</div>
-              <div><span className="text-slate-400">Email:</span> {formatValue(asset.email)}</div>
-              <div><span className="text-slate-400">Department:</span> {formatValue(asset.department)}</div>
-              <div><span className="text-slate-400">Location:</span> {formatValue(asset.location)}</div>
-              <div><span className="text-slate-400">Laptop No:</span> {formatValue(asset.laptop_no)}</div>
-              <div><span className="text-slate-400">Charger No:</span> {formatValue(asset.charger_no)}</div>
-              <div><span className="text-slate-400">Mouse No:</span> {formatValue(asset.mouse_no)}</div>
-              <div><span className="text-slate-400">Headset No:</span> {formatValue(asset.headset_no)}</div>
-              <div><span className="text-slate-400">Other Devices:</span> {formatValue(asset.other_devices)}</div>
+        <AccordionSection
+          title="Employee & Assignment"
+          subtitle="Employee ownership, location, and assignment details"
+          defaultOpen
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-3xl border border-white/10 bg-slate-950/75 p-5">
+              <div className="text-sm text-slate-400">Name</div>
+              <div className="mt-2 text-lg font-semibold text-white">{formatValue(asset.employee_name)}</div>
+            </div>
+            <div className="rounded-3xl border border-white/10 bg-slate-950/75 p-5">
+              <div className="text-sm text-slate-400">Employee ID</div>
+              <div className="mt-2 text-lg font-semibold text-white">{formatValue(asset.employee_id)}</div>
+            </div>
+            <div className="rounded-3xl border border-white/10 bg-slate-950/75 p-5">
+              <div className="text-sm text-slate-400">Email</div>
+              <div className="mt-2 text-lg font-semibold text-white">{formatValue(asset.email)}</div>
+            </div>
+            <div className="rounded-3xl border border-white/10 bg-slate-950/75 p-5">
+              <div className="text-sm text-slate-400">Department</div>
+              <div className="mt-2 text-lg font-semibold text-white">{formatValue(asset.department)}</div>
             </div>
           </div>
+        </AccordionSection>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/30 p-6">
-            <h2 className="text-lg font-black">System info</h2>
-            <div className="mt-4 space-y-2 text-sm text-slate-200">
-              <div><span className="text-slate-400">Hostname:</span> {formatValue(asset.hostname)}</div>
-              <div><span className="text-slate-400">Serial:</span> {formatValue(asset.serial_number)}</div>
-              <div><span className="text-slate-400">OS:</span> {formatValue(asset.os_name)}</div>
-              <div><span className="text-slate-400">Brand:</span> {formatValue(asset.brand)}</div>
-              <div><span className="text-slate-400">Reference Model:</span> {formatValue(asset.model)}</div>
-              <div><span className="text-slate-400">Model Number:</span> {formatValue(asset.model_number)}</div>
-              <div><span className="text-slate-400">CPU:</span> {formatValue(asset.cpu)}</div>
-              <div><span className="text-slate-400">Number of CPUs:</span> {formatValue(asset.number_of_cpus)}</div>
-              <div><span className="text-slate-400">Cores per CPU:</span> {formatValue(asset.cores_per_cpu)}</div>
-              <div><span className="text-slate-400">Logical Processors:</span> {formatValue(asset.logical_processors)}</div>
-              <div><span className="text-slate-400">RAM:</span> {formatValue(asset.ram)}</div>
-              <div><span className="text-slate-400">HDD Size:</span> {formatValue(asset.storage)}</div>
-              <div><span className="text-slate-400">Network Connection:</span> {formatValue(asset.network_connection)}</div>
-              <div><span className="text-slate-400">OS Installation Date:</span> {formatValue(asset.os_installation_date)}</div>
-              <div><span className="text-slate-400">User Accounts:</span> {formatValue(asset.user_accounts)}</div>
-            </div>
+        <AccordionSection title="System Information" subtitle="Technical device details" defaultOpen={false}>
+          <div className="grid gap-4 text-sm text-slate-200 md:grid-cols-2">
+            <AssetField label="Hostname" value={asset.hostname} />
+            <AssetField label="Serial Number" value={asset.serial_number} />
+            <AssetField label="OS" value={asset.os_name} />
+            <AssetField label="Brand" value={asset.brand} />
+            <AssetField label="Model" value={asset.model} />
+            <AssetField label="Model Number" value={asset.model_number} />
+            <AssetField label="CPU" value={asset.cpu} />
+            <AssetField label="RAM" value={asset.ram} />
+            <AssetField label="Storage" value={asset.storage} />
+            <AssetField label="Network" value={asset.network_connection} />
           </div>
-        </section>
+        </AccordionSection>
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/30 p-6">
-          <h2 className="text-lg font-black">Service tracking</h2>
-          <div className="mt-4 grid gap-2 text-sm text-slate-200 md:grid-cols-2">
-            <div><span className="text-slate-400">Status:</span> {formatValue(asset.service_status)}</div>
-            <div><span className="text-slate-400">Vendor:</span> {formatValue(asset.service_vendor)}</div>
-            <div><span className="text-slate-400">Handover Date:</span> {formatValue(asset.service_handover_date)}</div>
-            <div><span className="text-slate-400">Return Date:</span> {formatValue(asset.service_return_date)}</div>
-            <div><span className="text-slate-400">Invoice Number:</span> {formatValue(asset.service_invoice_number)}</div>
-            <div><span className="text-slate-400">Invoice Amount:</span> {formatValue(asset.service_invoice_amount)}</div>
-            <div className="md:col-span-2"><span className="text-slate-400">Service Notes:</span> {formatValue(asset.service_notes)}</div>
-            <div className="md:col-span-2">
-              <span className="text-slate-400">Invoice File:</span>{" "}
-              {invoiceUrl ? (
-                <a href={invoiceUrl} target="_blank" rel="noreferrer" className="text-amber-300 underline underline-offset-4">
-                  Open invoice
-                </a>
-              ) : (
-                "Not uploaded"
-              )}
+        <AccordionSection title="Service Tracking" subtitle="Repair and invoice information" defaultOpen={false}>
+          <div className="grid gap-4 text-sm text-slate-200 md:grid-cols-2">
+            <AssetField label="Status" value={asset.service_status} />
+            <AssetField label="Vendor" value={asset.service_vendor} />
+            <AssetField label="Handover Date" value={asset.service_handover_date} />
+            <AssetField label="Return Date" value={asset.service_return_date} />
+            <AssetField label="Invoice Number" value={asset.service_invoice_number} />
+            <AssetField label="Invoice Amount" value={asset.service_invoice_amount} />
+            <AssetField label="Service Notes" value={asset.service_notes} colSpan={2} />
+            <div className="md:col-span-2 rounded-3xl border border-white/10 bg-slate-950/75 p-5">
+              <div className="text-sm text-slate-400">Invoice File</div>
+              <div className="mt-2 text-base">
+                {invoiceUrl ? (
+                  <a href={invoiceUrl} target="_blank" rel="noreferrer" className="text-amber-300 underline underline-offset-4">
+                    Open invoice
+                  </a>
+                ) : (
+                  <span className="text-slate-400">Not uploaded</span>
+                )}
+              </div>
             </div>
           </div>
-        </section>
+        </AccordionSection>
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/30 p-6">
-          <h2 className="text-lg font-black">Asset images</h2>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Laptop front</div>
-              {laptopFront ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img alt="Laptop front" src={laptopFront} className="mt-3 w-full rounded-lg" />
-              ) : (
-                <div className="mt-3 text-sm text-slate-400">Not uploaded</div>
-              )}
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Laptop rear</div>
-              {laptopRear ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img alt="Laptop rear" src={laptopRear} className="mt-3 w-full rounded-lg" />
-              ) : (
-                <div className="mt-3 text-sm text-slate-400">Not uploaded</div>
-              )}
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Mouse</div>
-              {mouseImg ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img alt="Mouse" src={mouseImg} className="mt-3 w-full rounded-lg" />
-              ) : (
-                <div className="mt-3 text-sm text-slate-400">Not uploaded</div>
-              )}
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Charger</div>
-              {chargerImg ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img alt="Charger" src={chargerImg} className="mt-3 w-full rounded-lg" />
-              ) : (
-                <div className="mt-3 text-sm text-slate-400">Not uploaded</div>
-              )}
-            </div>
+        <AccordionSection title="Asset Images" subtitle="Square thumbnail preview of uploaded photos" defaultOpen={false}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ImagePreview title="Laptop Front" src={laptopFront} />
+            <ImagePreview title="Laptop Rear" src={laptopRear} />
+            <ImagePreview title="Mouse" src={mouseImg} />
+            <ImagePreview title="Charger" src={chargerImg} />
           </div>
-        </section>
+        </AccordionSection>
       </div>
     </main>
   );
 }
+
+function AssetField({
+  label,
+  value,
+  colSpan = 1,
+}: {
+  label: string;
+  value: string | null | undefined;
+  colSpan?: number;
+}) {
+  return (
+    <div className={colSpan === 2 ? "md:col-span-2 rounded-3xl border border-white/10 bg-slate-950/75 p-5" : "rounded-3xl border border-white/10 bg-slate-950/75 p-5"}>
+      <div className="text-sm text-slate-400">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-white">{formatValue(value)}</div>
+    </div>
+  );
+}
+
+function ImagePreview({ title, src }: { title: string; src: string | null }) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-slate-950/75 p-4">
+      <div className="text-sm text-slate-400">{title}</div>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img alt={title} src={src} className="mt-3 h-64 w-full rounded-3xl object-cover" />
+      ) : (
+        <div className="mt-3 flex h-64 items-center justify-center rounded-3xl border border-dashed border-white/10 bg-slate-900/60 text-sm text-slate-500">
+          Not uploaded
+        </div>
+      )}
+    </div>
+  );
+}
+
