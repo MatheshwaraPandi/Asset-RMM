@@ -75,6 +75,10 @@ class AssetServiceUpdate(BaseModel):
     service_invoice_amount: Optional[str] = None
 
 
+class AssetStatusUpdate(BaseModel):
+    is_active: bool
+
+
 class EmployeeAssetSelfUpdate(BaseModel):
     employee_name: Optional[str] = None
     email: Optional[str] = None
@@ -140,6 +144,7 @@ class AssetOut(BaseModel):
     asset_status_date: Optional[str] = None
     asset_status_last_updated_at: Optional[datetime] = None
     asset_status_last_updated_by: Optional[str] = None
+    is_active: bool = True
     assignment_status: Optional[str] = None
     assignment_status_date: Optional[str] = None
     assignment_status_last_updated_at: Optional[datetime] = None

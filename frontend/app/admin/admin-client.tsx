@@ -22,6 +22,7 @@ import {
   getServiceForm,
 } from "@/lib/asset";
 import { orgConfig } from "@/lib/org";
+import EmployeeGroupedInventory from "@/components/employee-grouped-inventory";
 
 type AdminClientProps = {
   accessToken: string;
@@ -121,6 +122,8 @@ export default function AdminClient({
   const [creatingAsset, setCreatingAsset] = useState(false);
   const [deletingAsset, setDeletingAsset] = useState(false);
   const [showLaptopPassword, setShowLaptopPassword] = useState(false);
+  const [togglingAssetStatus, setTogglingAssetStatus] = useState(false);
+  const [useGroupedView, setUseGroupedView] = useState(true);
 
   const [laptopFrontFile, setLaptopFrontFile] = useState<File | null>(null);
   const [laptopRearFile, setLaptopRearFile] = useState<File | null>(null);
@@ -302,6 +305,29 @@ export default function AdminClient({
       setError("Failed to delete asset.");
     } finally {
       setDeletingAsset(false);
+    }
+  };
+
+  const toggleAssetStatus = async (assetId: number, newStatus: boolean) => {
+    setTogglingAssetStatus(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await axios.put<Asset>(
+        `${getBackendBaseUrl()}/assets/${assetId}/status`,
+        { is_active: newStatus },
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      const updated = res.data;
+      setAssets((current) => current.map((asset) => (asset.id === updated.id ? updated : asset)));
+      if (selected?.id === assetId) {
+        setSelected(updated);
+      }
+      setSuccess(`Asset ${newStatus ? "activated" : "deactivated"} successfully.`);
+    } catch {
+      setError("Failed to update asset status.");
+    } finally {
+      setTogglingAssetStatus(false);
     }
   };
 
@@ -649,7 +675,7 @@ export default function AdminClient({
                 </p>
                 <h2 className="mt-2 text-2xl font-black">Employee Assets</h2>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 lg:flex-row">
                 {canEditAssignment ? (
                   <button
                     onClick={createAsset}
@@ -660,6 +686,12 @@ export default function AdminClient({
                     {creatingAsset ? "Creating..." : "New Employee"}
                   </button>
                 ) : null}
+                <button
+                  onClick={() => setUseGroupedView(!useGroupedView)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                >
+                  {useGroupedView ? "List View" : "Grouped View"}
+                </button>
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -676,7 +708,7 @@ export default function AdminClient({
               </div>
             </div>
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-5">
               {loading ? (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-slate-300">
                   Loading assets...
@@ -689,32 +721,47 @@ export default function AdminClient({
                 </div>
               ) : null}
 
-              {filtered.map((asset) => {
-                const selectedClass = selected?.id === asset.id ? "border-sky-400/50 bg-sky-500/10" : "border-white/10 bg-white/5";
-                return (
-                  <button
-                    key={asset.id}
-                    onClick={() => openAsset(asset)}
-                    className={`grid w-full gap-3 rounded-2xl border p-4 text-left transition hover:border-sky-300/40 hover:bg-white/10 ${selectedClass}`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <div className="text-base font-bold text-white">{getAssetDisplayName(asset)}</div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          {formatValue(asset.employee_id)} | {formatValue(asset.department)}
+              {!loading && filtered.length > 0 && useGroupedView ? (
+                <EmployeeGroupedInventory
+                  assets={filtered}
+                  onAssetSelect={openAsset}
+                  selectedAssetId={selected?.id || null}
+                  onAssetStatusToggle={toggleAssetStatus}
+                  isTogglingStatus={togglingAssetStatus}
+                />
+              ) : null}
+
+              {!loading && filtered.length > 0 && !useGroupedView ? (
+                <div className="space-y-3">
+                  {filtered.map((asset) => {
+                    const selectedClass =
+                      selected?.id === asset.id ? "border-sky-400/50 bg-sky-500/10" : "border-white/10 bg-white/5";
+                    return (
+                      <button
+                        key={asset.id}
+                        onClick={() => openAsset(asset)}
+                        className={`grid w-full gap-3 rounded-2xl border p-4 text-left transition hover:border-sky-300/40 hover:bg-white/10 ${selectedClass}`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-base font-bold text-white">{getAssetDisplayName(asset)}</div>
+                            <div className="mt-1 text-xs text-slate-400">
+                              {formatValue(asset.employee_id)} | {formatValue(asset.department)}
+                            </div>
+                          </div>
+                          <ServiceBadge status={asset.service_status} />
                         </div>
-                      </div>
-                      <ServiceBadge status={asset.service_status} />
-                    </div>
-                    <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
-                      <div>Serial: {formatValue(asset.serial_number)}</div>
-                      <div>Hostname: {formatValue(asset.hostname)}</div>
-                      <div>Model: {formatValue(asset.model)}</div>
-                      <div>Location: {formatValue(asset.location)}</div>
-                    </div>
-                  </button>
-                );
-              })}
+                        <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                          <div>Serial: {formatValue(asset.serial_number)}</div>
+                          <div>Hostname: {formatValue(asset.hostname)}</div>
+                          <div>Model: {formatValue(asset.model)}</div>
+                          <div>Location: {formatValue(asset.location)}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           </div>
 

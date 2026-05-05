@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import AccordionSection from "@/components/accordion-section";
 import EmployeeAssetEditor from "@/components/employee-asset-editor";
 import EmployeePasswordForm from "@/components/employee-password-form";
+import SidebarNavigation from "@/components/sidebar-navigation";
 import { authOptions } from "@/lib/auth";
 import { getBackendBaseUrl } from "@/lib/backend-url";
 import type { Asset } from "@/lib/asset";
@@ -41,63 +42,68 @@ export default async function Dashboard() {
   const invoices = assets.filter((asset) => asset.service_invoice_path).length;
 
   return (
-    <main className="min-h-screen bg-transparent px-4 py-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[32px] border p-8 backdrop-blur" style={{ borderColor: "var(--border)", background: "var(--panel)" }}>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700 dark:text-emerald-200">
-            {orgConfig.name}
-          </p>
-          <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-4xl font-black" style={{ color: "var(--text-strong)" }}>
-                {isEmployee ? `${displayName} Workspace` : "Operations Dashboard"}
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6" style={{ color: "var(--text-muted)" }}>
-                {isEmployee
-                  ? "View your assigned systems, update your visible asset details, and manage account access."
-                  : "Unified view of organization assets, repair activity, device tracking, and employee operations."}
-              </p>
+    <div className="flex min-h-screen">
+      <SidebarNavigation 
+        userRole={session.role as "admin" | "hr" | "employee"} 
+        userName={displayName}
+      />
+      <main className="flex-1 md:ml-64 bg-transparent px-4 py-8">
+        <div className="mx-auto max-w-7xl space-y-6">
+          <section className="rounded-[32px] border p-8 backdrop-blur" style={{ borderColor: "var(--border)", background: "var(--panel)" }}>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700 dark:text-emerald-200">
+              {orgConfig.name}
+            </p>
+            <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h1 className="text-4xl font-black" style={{ color: "var(--text-strong)" }}>
+                  {isEmployee ? `${displayName} Workspace` : "Operations Dashboard"}
+                </h1>
+                <p className="mt-3 max-w-3xl text-sm leading-6" style={{ color: "var(--text-muted)" }}>
+                  {isEmployee
+                    ? "View your assigned systems, update your visible asset details, and manage account access."
+                    : "Unified view of organization assets, repair activity, device tracking, and employee operations."}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                {isEmployee ? null : (
+                  <>
+                    <Link
+                      href="/tracking"
+                      className="rounded-full border px-5 py-3 text-sm font-bold transition hover:bg-slate-900/5 dark:hover:bg-white/10"
+                      style={{ borderColor: "var(--border)", color: "var(--text-strong)", background: "var(--panel-muted)" }}
+                    >
+                      Service Tracking Dashboard
+                    </Link>
+                    <Link
+                      href="/device-dashboard"
+                      className="rounded-full border px-5 py-3 text-sm font-bold transition hover:bg-slate-900/5 dark:hover:bg-white/10"
+                      style={{ borderColor: "var(--border)", color: "var(--text-strong)", background: "var(--panel-muted)" }}
+                    >
+                      Device Inventory Dashboard
+                    </Link>
+                    <Link
+                      href="/admin"
+                      className="rounded-full bg-sky-600 px-5 py-3 text-sm font-bold text-white hover:bg-sky-500"
+                    >
+                      Asset Management Dashboard
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex gap-3">
-              {isEmployee ? null : (
-                <>
-                  <Link
-                    href="/tracking"
-                    className="rounded-full border px-5 py-3 text-sm font-bold transition hover:bg-slate-900/5 dark:hover:bg-white/10"
-                    style={{ borderColor: "var(--border)", color: "var(--text-strong)", background: "var(--panel-muted)" }}
-                  >
-                    Open Tracking Center
-                  </Link>
-                  <Link
-                    href="/device-dashboard"
-                    className="rounded-full border px-5 py-3 text-sm font-bold transition hover:bg-slate-900/5 dark:hover:bg-white/10"
-                    style={{ borderColor: "var(--border)", color: "var(--text-strong)", background: "var(--panel-muted)" }}
-                  >
-                    Open Device Dashboard
-                  </Link>
-                  <Link
-                    href="/admin"
-                    className="rounded-full bg-sky-600 px-5 py-3 text-sm font-bold text-white hover:bg-sky-500"
-                  >
-                    Open Operations Console
-                  </Link>
-                </>
-              )}
+            <div className="mt-6 grid gap-4 md:grid-cols-4">
+              <Metric label="Assets" value={assets.length} />
+              <Metric label="Assigned" value={assets.filter((asset) => asset.employee_name || asset.employee_id).length} />
+              <Metric label="In Service" value={inService} />
+              <Metric label="Invoices" value={invoices} />
             </div>
-          </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-4">
-            <Metric label="Assets" value={assets.length} />
-            <Metric label="Assigned" value={assets.filter((asset) => asset.employee_name || asset.employee_id).length} />
-            <Metric label="In Service" value={inService} />
-            <Metric label="Invoices" value={invoices} />
-          </div>
-        </section>
+          </section>
 
-        <AccordionSection
-          title={isEmployee ? "Assigned Asset Details" : "Organization Asset Register"}
-          subtitle={isEmployee ? "Only assets assigned to your account are visible." : "Browse all organization devices and tickets."}
-          defaultOpen
-        >
+          <AccordionSection
+            title={isEmployee ? "Assigned Asset Details" : "Organization Asset Register"}
+            subtitle={isEmployee ? "Only assets assigned to your account are visible." : "Browse all organization devices and tickets."}
+            defaultOpen
+          >
           {isEmployee ? (
             <div className="space-y-4">
               {assets.length === 0 ? (
@@ -205,6 +211,7 @@ export default async function Dashboard() {
         ) : null}
       </div>
     </main>
+    </div>
   );
 }
 

@@ -787,6 +787,23 @@ def update_service(
     return asset
 
 
+@app.put("/assets/{asset_id}/status", response_model=schemas.AssetOut)
+def update_asset_status(
+    asset_id: int,
+    update: schemas.AssetStatusUpdate,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_roles("admin", "hr")),
+):
+    asset = crud.get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    asset.is_active = update.is_active
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
 @app.post("/assets/{asset_id}/service-invoice", response_model=schemas.AssetOut)
 def upload_service_invoice(
     asset_id: int,

@@ -1,4 +1,4 @@
-﻿from sqlalchemy import Column, DateTime, Integer, String
+﻿from sqlalchemy import Column, DateTime, Integer, String, Boolean
 import datetime
 
 from .database import Base
@@ -72,6 +72,7 @@ class Asset(Base):
     asset_status_date = Column(String, nullable=True)
     asset_status_last_updated_at = Column(DateTime, nullable=True)
     asset_status_last_updated_by = Column(String, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
     assignment_status = Column(String, nullable=True, default="Assigned")
     assignment_status_date = Column(String, nullable=True)
     assignment_status_last_updated_at = Column(DateTime, nullable=True)

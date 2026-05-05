@@ -50,6 +50,7 @@ export type Asset = {
   asset_status_date?: string | null;
   asset_status_last_updated_at?: string | null;
   asset_status_last_updated_by?: string | null;
+  is_active?: boolean;
   assignment_status?: string | null;
   assignment_status_date?: string | null;
   assignment_status_last_updated_at?: string | null;
