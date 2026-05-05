@@ -135,6 +135,7 @@ def ensure_sqlite_columns(engine) -> None:
             "assignment_status_date": "TEXT",
             "assignment_status_last_updated_at": "TEXT",
             "assignment_status_last_updated_by": "TEXT",
+            "is_active": "INTEGER DEFAULT 1",
             "last_updated": "TEXT",
         }
 
