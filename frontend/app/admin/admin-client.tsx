@@ -5,12 +5,18 @@ import jsPDF from "jspdf";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+<<<<<<< Updated upstream
 import { Building2, Cpu, Download, Eye, EyeOff, FileText, KeyRound, Plus, Printer, RefreshCw, Save, ShieldCheck, Trash2, Upload, UserCog, Wrench } from "lucide-react";
+=======
+import { Building2, Cpu, Download, Eye, EyeOff, FileText, KeyRound, Plus, RefreshCw, Save, ShieldCheck, Trash2, Upload, UserCog, Wrench } from "lucide-react";
+>>>>>>> Stashed changes
 
 import { getBackendBaseUrl } from "@/lib/backend-url";
 import {
   Asset,
   AssignmentForm,
+  normalizeServiceStatus,
+  SERVICE_STATUS_OPTIONS,
   ServiceForm,
   emptyForm,
   emptyServiceForm,
@@ -21,6 +27,15 @@ import {
   getServiceForm,
 } from "@/lib/asset";
 import { orgConfig } from "@/lib/org";
+<<<<<<< Updated upstream
+=======
+import EmployeeGroupedInventory from "@/components/employee-grouped-inventory";
+import {
+  ASSET_IMAGE_ACCEPT,
+  ASSET_IMAGE_MAX_SIZE_MB,
+  validateAssetImageFile,
+} from "@/lib/upload";
+>>>>>>> Stashed changes
 
 type AdminClientProps = {
   accessToken: string;
@@ -39,24 +54,6 @@ type CredentialInfo = {
   email?: string | null;
   password_configured: boolean;
 };
-
-const serviceStatuses = [
-  "In Use",
-  "Repair Requested",
-  "Handed Over",
-  "In Service Center",
-  "Ready for Return",
-  "Returned",
-];
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
 function sanitizeFilename(value: string) {
   return value.replace(/[^a-zA-Z0-9-_]+/g, "_").replace(/^_+|_+$/g, "") || "asset-qr";
@@ -204,8 +201,8 @@ export default function AdminClient({
 
   const stats = useMemo(() => {
     const inService = assets.filter((asset) =>
-      ["Repair Requested", "Handed Over", "In Service Center"].includes(
-        asset.service_status ?? ""
+      ["Repair Requested", "Handed Over to Tech Support Team", "In Service Center"].includes(
+        normalizeServiceStatus(asset.service_status)
       )
     ).length;
     const assigned = assets.filter((asset) => asset.employee_name || asset.employee_id).length;
@@ -304,6 +301,26 @@ export default function AdminClient({
     if (!path) return null;
     if (path.startsWith("http://") || path.startsWith("https://")) return path;
     return `${getBackendBaseUrl()}${path}`;
+  };
+
+  const handleAssetImageSelection = (
+    file: File | null,
+    setter: (file: File | null) => void
+  ) => {
+    if (!file) {
+      setter(null);
+      return;
+    }
+
+    const validationError = validateAssetImageFile(file);
+    if (validationError) {
+      setError(validationError);
+      setter(null);
+      return;
+    }
+
+    setError("");
+    setter(file);
   };
 
   const saveAssignment = async () => {
@@ -439,7 +456,8 @@ export default function AdminClient({
       );
 
       if (!uploadRes.ok) {
-        setError("Image upload failed.");
+        const errorBody = (await uploadRes.json().catch(() => null)) as { detail?: string } | null;
+        setError(errorBody?.detail ?? "Image upload failed.");
         return;
       }
 
@@ -905,7 +923,7 @@ export default function AdminClient({
                       <div>Hostname: {formatValue(selected.hostname)}</div>
                       <div>OS: {formatValue(selected.os_name)}</div>
                       <div>Model: {formatValue(selected.model)}</div>
-                      <div>Service Status: {formatValue(selected.service_status)}</div>
+                      <div>Service Status: {formatValue(normalizeServiceStatus(selected.service_status))}</div>
                     </div>
                   </div>
                 </section>
@@ -1042,7 +1060,7 @@ export default function AdminClient({
                           disabled={!canManageService}
                           className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {serviceStatuses.map((status) => (
+                          {SERVICE_STATUS_OPTIONS.map((status) => (
                             <option key={status} value={status}>
                               {status}
                             </option>
@@ -1084,11 +1102,30 @@ export default function AdminClient({
                       <Upload size={16} className="text-sky-300" />
                       <h3 className="text-lg font-black">Asset Images</h3>
                     </div>
+                    <p className="mt-3 text-sm text-slate-300">
+                      Upload JPG or PNG images up to {ASSET_IMAGE_MAX_SIZE_MB} MB each. Mobile users can capture photos directly from the camera.
+                    </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <UploadField label="Laptop Front" onChange={setLaptopFrontFile} preview={imageUrl(selected.laptop_front_image)} />
-                      <UploadField label="Laptop Rear" onChange={setLaptopRearFile} preview={imageUrl(selected.laptop_rear_image)} />
-                      <UploadField label="Mouse" onChange={setMouseFile} preview={imageUrl(selected.mouse_image)} />
-                      <UploadField label="Charger" onChange={setChargerFile} preview={imageUrl(selected.charger_image)} />
+                      <UploadField
+                        label="Laptop Front"
+                        onChange={(file) => handleAssetImageSelection(file, setLaptopFrontFile)}
+                        preview={imageUrl(selected.laptop_front_image)}
+                      />
+                      <UploadField
+                        label="Laptop Rear"
+                        onChange={(file) => handleAssetImageSelection(file, setLaptopRearFile)}
+                        preview={imageUrl(selected.laptop_rear_image)}
+                      />
+                      <UploadField
+                        label="Mouse"
+                        onChange={(file) => handleAssetImageSelection(file, setMouseFile)}
+                        preview={imageUrl(selected.mouse_image)}
+                      />
+                      <UploadField
+                        label="Charger"
+                        onChange={(file) => handleAssetImageSelection(file, setChargerFile)}
+                        preview={imageUrl(selected.charger_image)}
+                      />
                     </div>
                     <button
                       onClick={uploadImages}
@@ -1127,7 +1164,7 @@ export default function AdminClient({
                         {uploadingInvoice ? "Uploading invoice..." : "Upload invoice"}
                       </button>
                       <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4 text-sm text-slate-300">
-                        <div>Current Status: {formatValue(selected.service_status)}</div>
+                        <div>Current Status: {formatValue(normalizeServiceStatus(selected.service_status))}</div>
                         <div>Invoice Number: {formatValue(selected.service_invoice_number)}</div>
                         <div>Invoice Amount: {formatValue(selected.service_invoice_amount)}</div>
                         <div>Last Service Update By: {formatValue(selected.service_last_updated_by)}</div>
@@ -1234,9 +1271,9 @@ function Field({
 }
 
 function ServiceBadge({ status }: { status?: string | null }) {
-  const current = status || "In Use";
+  const current = normalizeServiceStatus(status);
   const className =
-    current === "Returned"
+    current === "Returned to Employee"
       ? "bg-emerald-500/15 text-emerald-200 border-emerald-400/30"
       : current === "In Use"
         ? "bg-sky-500/15 text-sky-200 border-sky-400/30"
@@ -1264,7 +1301,8 @@ function UploadField({
       </span>
       <input
         type="file"
-        accept="image/png,image/jpeg"
+        accept={ASSET_IMAGE_ACCEPT}
+        capture="environment"
         onChange={(e) => onChange(e.target.files?.[0] ?? null)}
         className="block w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-600 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
       />

@@ -129,6 +129,28 @@ export const emptyServiceForm: ServiceForm = {
   service_invoice_amount: "",
 };
 
+export const SERVICE_STATUS_OPTIONS = [
+  "In Use",
+  "Repair Requested",
+  "Handed Over to Tech Support Team",
+  "In Service Center",
+  "Ready for Return",
+  "Returned to Employee",
+] as const;
+
+const LEGACY_SERVICE_STATUS_MAP: Record<string, string> = {
+  "Handed Over": "Handed Over to Tech Support Team",
+  Returned: "Returned to Employee",
+};
+
+export function normalizeServiceStatus(value?: string | null) {
+  if (!value) {
+    return "In Use";
+  }
+
+  return LEGACY_SERVICE_STATUS_MAP[value] ?? value;
+}
+
 export function getAssignmentForm(asset: Asset): AssignmentForm {
   return {
     employee_name: asset.employee_name ?? "",
@@ -146,7 +168,7 @@ export function getAssignmentForm(asset: Asset): AssignmentForm {
 
 export function getServiceForm(asset: Asset): ServiceForm {
   return {
-    service_status: asset.service_status ?? "In Use",
+    service_status: normalizeServiceStatus(asset.service_status),
     service_notes: asset.service_notes ?? "",
     service_vendor: asset.service_vendor ?? "",
     service_handover_date: asset.service_handover_date ?? "",
