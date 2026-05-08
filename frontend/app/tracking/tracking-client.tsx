@@ -1,10 +1,13 @@
 "use client";
 
 import axios from "axios";
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+<<<<<<< Updated upstream
 import { ArrowLeft, ArrowRightLeft, Boxes, CalendarClock, History, RefreshCw, Save, Search } from "lucide-react";
+=======
+import { ArrowRightLeft, Boxes, CalendarClock, ChevronDown, ChevronUp, History, RefreshCw, Save, Search } from "lucide-react";
+>>>>>>> Stashed changes
 
 import { getBackendBaseUrl } from "@/lib/backend-url";
 import type { Asset, AssetTracking } from "@/lib/asset";
@@ -38,6 +41,14 @@ export default function TrackingClient({
   const [assetStatusDate, setAssetStatusDate] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("Assigned");
   const [assignmentStatusDate, setAssignmentStatusDate] = useState("");
+<<<<<<< Updated upstream
+=======
+  const [components, setComponents] = useState<AssetComponent[]>([]);
+  const [loadingComponents, setLoadingComponents] = useState(false);
+  const [componentStatus, setComponentStatus] = useState<Record<number, string>>({});
+  const [savingComponent, setSavingComponent] = useState<number | null>(null);
+  const [isAssetBrowserCollapsed, setIsAssetBrowserCollapsed] = useState(false);
+>>>>>>> Stashed changes
 
   const fetchAssets = async () => {
     setLoadingAssets(true);
@@ -163,6 +174,7 @@ export default function TrackingClient({
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
+<<<<<<< Updated upstream
               <Link
                 href="/dashboard"
                 className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white hover:bg-white/10"
@@ -177,6 +189,16 @@ export default function TrackingClient({
                 <Boxes size={16} />
                 Operations Console
               </Link>
+=======
+              <button
+                onClick={fetchAssets}
+                disabled={loadingAssets}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white hover:bg-white/10 disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={loadingAssets ? "animate-spin" : ""} />
+                {loadingAssets ? "Refreshing..." : "Refresh"}
+              </button>
+>>>>>>> Stashed changes
             </div>
           </div>
           <div className="mt-6 grid gap-4 md:grid-cols-4">
@@ -204,55 +226,72 @@ export default function TrackingClient({
             <div className="flex items-center gap-2 text-slate-200">
               <Search size={16} className="text-sky-300" />
               <h2 className="text-lg font-black">Tracked Assets</h2>
+              <button
+                type="button"
+                onClick={() => setIsAssetBrowserCollapsed((current) => !current)}
+                className="ml-auto inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10"
+              >
+                {isAssetBrowserCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                {isAssetBrowserCollapsed ? "Expand" : "Collapse"}
+              </button>
             </div>
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search employee, serial, laptop no, or status"
-              className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-sky-400"
-            />
-            <div className="mt-4 space-y-3">
-              {loadingAssets ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-slate-400">
-                  Loading assets...
-                </div>
-              ) : filteredAssets.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-slate-400">
-                  No tracked assets found.
-                </div>
-              ) : (
-                filteredAssets.map((asset) => {
-                  const active = asset.id === selectedId;
-                  return (
-                    <button
-                      key={asset.id}
-                      type="button"
-                      onClick={() => setSelectedId(asset.id)}
-                      className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-                        active
-                          ? "border-sky-400/50 bg-sky-500/10"
-                          : "border-white/10 bg-white/5 hover:bg-white/10"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-white">{getAssetDisplayName(asset)}</div>
-                          <div className="mt-1 text-xs text-slate-400">
-                            {formatValue(asset.employee_id)} | {formatValue(asset.laptop_no)}
+            {!isAssetBrowserCollapsed ? (
+              <>
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search by laptop number, serial, employee ID, or status"
+                  className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-sky-400"
+                />
+                <div className="mt-4 space-y-3">
+                  {loadingAssets ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-slate-400">
+                      Loading assets...
+                    </div>
+                  ) : filteredAssets.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-slate-400">
+                      No tracked assets found.
+                    </div>
+                  ) : (
+                    filteredAssets.map((asset) => {
+                      const active = asset.id === selectedId;
+                      return (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          onClick={() => setSelectedId(asset.id)}
+                          className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                            active
+                              ? "border-sky-400/50 bg-sky-500/10"
+                              : "border-white/10 bg-white/5 hover:bg-white/10"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-white">{getAssetDisplayName(asset)}</div>
+                              <div className="mt-1 text-xs text-slate-400">
+                                {formatValue(asset.employee_id)} | {formatValue(asset.laptop_no)}
+                              </div>
+                            </div>
+                            <StatusChip tone="sky" label={asset.asset_status ?? "In Use"} />
                           </div>
-                        </div>
-                        <StatusChip tone="sky" label={asset.asset_status ?? "In Use"} />
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
-                        <StatusChip tone="emerald" label={asset.assignment_status ?? "Assigned"} />
-                        <span>Updated: {formatValue(asset.asset_status_date ?? asset.last_updated)}</span>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                            <StatusChip tone="emerald" label={asset.assignment_status ?? "Assigned"} />
+                            <span>Serial: {formatValue(asset.serial_number)}</span>
+                            <span>Updated: {formatValue(asset.asset_status_date ?? asset.last_updated)}</span>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-slate-400">
+                Asset list collapsed. Expand when you need to browse or search.
+              </div>
+            )}
           </aside>
 
           <section className="space-y-6">

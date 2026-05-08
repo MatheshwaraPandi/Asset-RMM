@@ -25,6 +25,7 @@ models.Base.metadata.create_all(bind=engine)
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MAX_ASSET_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 
 app = FastAPI(title="RMM Lite API")
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
@@ -271,6 +272,22 @@ def _safe_image_ext(filename: str, content_type: Optional[str]) -> str:
     raise HTTPException(status_code=400, detail="Only PNG/JPG images are allowed")
 
 
+def _validate_upload_size(upload: UploadFile, max_bytes: int, label: str) -> None:
+    try:
+        upload.file.seek(0, os.SEEK_END)
+        file_size = upload.file.tell()
+        upload.file.seek(0)
+    except OSError:
+        raise HTTPException(status_code=400, detail=f"Unable to read the {label} upload")
+
+    if file_size > max_bytes:
+        max_size_mb = max_bytes // (1024 * 1024)
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label.capitalize()} must be {max_size_mb} MB or smaller",
+        )
+
+
 def _safe_invoice_ext(filename: str, content_type: Optional[str]) -> str:
     name = (filename or "").lower()
     if name.endswith(".pdf"):
@@ -290,6 +307,7 @@ def _safe_invoice_ext(filename: str, content_type: Optional[str]) -> str:
 
 def _save_upload(asset_id: int, token: str, field: str, upload: UploadFile) -> str:
     ext = _safe_image_ext(upload.filename or "", upload.content_type)
+    _validate_upload_size(upload, MAX_ASSET_IMAGE_SIZE_BYTES, field.replace("_", " "))
     filename = f"{asset_id}_{token[:8]}_{field}{ext}"
     path = UPLOAD_DIR / filename
 

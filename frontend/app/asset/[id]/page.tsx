@@ -1,6 +1,6 @@
 ﻿import { getBackendBaseUrl } from "@/lib/backend-url";
 import type { Asset } from "@/lib/asset";
-import { formatValue, getAssetDisplayName } from "@/lib/asset";
+import { formatValue, getAssetDisplayName, normalizeServiceStatus } from "@/lib/asset";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -76,6 +76,7 @@ export default async function AssetPage(props: PageProps) {
             </div>
           </div>
 
+<<<<<<< Updated upstream
           <div className="rounded-2xl border border-slate-800 bg-slate-950/30 p-6">
             <h2 className="text-lg font-black">System info</h2>
             <div className="mt-4 space-y-2 text-sm text-slate-200">
@@ -94,6 +95,43 @@ export default async function AssetPage(props: PageProps) {
               <div><span className="text-slate-400">Network Connection:</span> {formatValue(asset.network_connection)}</div>
               <div><span className="text-slate-400">OS Installation Date:</span> {formatValue(asset.os_installation_date)}</div>
               <div><span className="text-slate-400">User Accounts:</span> {formatValue(asset.user_accounts)}</div>
+=======
+        <AccordionSection title="System Information" subtitle="Technical device details" defaultOpen={false}>
+          <div className="grid gap-4 text-sm text-slate-200 md:grid-cols-2">
+            <AssetField label="Hostname" value={asset.hostname} />
+            <AssetField label="Serial Number" value={asset.serial_number} />
+            <AssetField label="OS" value={asset.os_name} />
+            <AssetField label="Brand" value={asset.brand} />
+            <AssetField label="Model" value={asset.model} />
+            <AssetField label="Model Number" value={asset.model_number} />
+            <AssetField label="CPU" value={asset.cpu} />
+            <AssetField label="RAM" value={asset.ram} />
+            <AssetField label="Storage" value={asset.storage} />
+            <AssetField label="Network" value={asset.network_connection} />
+          </div>
+        </AccordionSection>
+
+        <AccordionSection title="Service Tracking" subtitle="Repair and invoice information" defaultOpen={false}>
+          <div className="grid gap-4 text-sm text-slate-200 md:grid-cols-2">
+            <AssetField label="Status" value={normalizeServiceStatus(asset.service_status)} />
+            <AssetField label="Vendor" value={asset.service_vendor} />
+            <AssetField label="Handover Date" value={asset.service_handover_date} />
+            <AssetField label="Return Date" value={asset.service_return_date} />
+            <AssetField label="Invoice Number" value={asset.service_invoice_number} />
+            <AssetField label="Invoice Amount" value={asset.service_invoice_amount} />
+            <AssetField label="Service Notes" value={asset.service_notes} colSpan={2} />
+            <div className="md:col-span-2 rounded-3xl border border-white/10 bg-slate-950/75 p-5">
+              <div className="text-sm text-slate-400">Invoice File</div>
+              <div className="mt-2 text-base">
+                {invoiceUrl ? (
+                  <a href={invoiceUrl} target="_blank" rel="noreferrer" className="text-amber-300 underline underline-offset-4">
+                    Open invoice
+                  </a>
+                ) : (
+                  <span className="text-slate-400">Not uploaded</span>
+                )}
+              </div>
+>>>>>>> Stashed changes
             </div>
           </div>
         </section>

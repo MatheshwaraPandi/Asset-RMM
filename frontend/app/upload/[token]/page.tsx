@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { getBackendBaseUrl } from "@/lib/backend-url";
+import {
+  ASSET_IMAGE_ACCEPT,
+  ASSET_IMAGE_MAX_SIZE_MB,
+  validateAssetImageFile,
+} from "@/lib/upload";
 
 type UploadInfo = {
   id: number;
@@ -70,6 +75,26 @@ export default function UploadPage() {
     run();
   }, [token]);
 
+  const handleAssetImageSelection = (
+    file: File | null,
+    setter: (file: File | null) => void
+  ) => {
+    if (!file) {
+      setter(null);
+      return;
+    }
+
+    const validationError = validateAssetImageFile(file);
+    if (validationError) {
+      setError(validationError);
+      setter(null);
+      return;
+    }
+
+    setError("");
+    setter(file);
+  };
+
   const handleUpload = async () => {
     if (!token) return;
     if (!anySelected) {
@@ -97,8 +122,8 @@ export default function UploadPage() {
       );
 
       if (!res.ok) {
-        const text = await res.text();
-        setError(text || "Upload failed.");
+        const errorBody = (await res.json().catch(() => null)) as { detail?: string } | null;
+        setError(errorBody?.detail ?? "Upload failed.");
         return;
       }
 
@@ -126,7 +151,7 @@ export default function UploadPage() {
           </p>
           <h1 className="mt-3 text-2xl font-black">Upload Asset Images</h1>
           <p className="mt-2 text-sm text-slate-300">
-            Upload photos of the laptop and accessories. Only PNG/JPG supported.
+            Upload photos of the laptop and accessories. Use JPG or PNG only, up to {ASSET_IMAGE_MAX_SIZE_MB} MB each.
           </p>
         </header>
 
@@ -169,8 +194,9 @@ export default function UploadPage() {
                 </div>
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(e) => setLaptopFront(e.target.files?.[0] ?? null)}
+                  accept={ASSET_IMAGE_ACCEPT}
+                  capture="environment"
+                  onChange={(e) => handleAssetImageSelection(e.target.files?.[0] ?? null, setLaptopFront)}
                 />
               </label>
               <label className="space-y-2">
@@ -179,8 +205,9 @@ export default function UploadPage() {
                 </div>
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(e) => setLaptopRear(e.target.files?.[0] ?? null)}
+                  accept={ASSET_IMAGE_ACCEPT}
+                  capture="environment"
+                  onChange={(e) => handleAssetImageSelection(e.target.files?.[0] ?? null, setLaptopRear)}
                 />
               </label>
               <label className="space-y-2">
@@ -189,8 +216,9 @@ export default function UploadPage() {
                 </div>
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(e) => setMouse(e.target.files?.[0] ?? null)}
+                  accept={ASSET_IMAGE_ACCEPT}
+                  capture="environment"
+                  onChange={(e) => handleAssetImageSelection(e.target.files?.[0] ?? null, setMouse)}
                 />
               </label>
               <label className="space-y-2">
@@ -199,8 +227,9 @@ export default function UploadPage() {
                 </div>
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(e) => setCharger(e.target.files?.[0] ?? null)}
+                  accept={ASSET_IMAGE_ACCEPT}
+                  capture="environment"
+                  onChange={(e) => handleAssetImageSelection(e.target.files?.[0] ?? null, setCharger)}
                 />
               </label>
             </div>
